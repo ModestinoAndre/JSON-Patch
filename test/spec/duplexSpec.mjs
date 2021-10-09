@@ -367,7 +367,7 @@ describe('duplex', function() {
       expect(patches).toReallyEqual([
         {
           op: 'add',
-          path: '/1',
+          path: '/-',
           value: 2
         }
       ]);
@@ -377,8 +377,12 @@ describe('duplex', function() {
       patches = jsonpatch.generate(observer);
       expect(patches).toReallyEqual([
         {
-          op: 'replace',
-          path: '/0',
+          op: 'remove',
+          path: '/:1'
+        },
+        {
+          op: 'add',
+          path: '/-',
           value: 3
         }
       ]);
@@ -388,8 +392,12 @@ describe('duplex', function() {
       patches = jsonpatch.generate(observer);
       expect(patches).toReallyEqual([
         {
-          op: 'replace',
-          path: '/1',
+          op: 'remove',
+          path: '/:2'
+        },
+        {
+          op: 'add',
+          path: '/-',
           value: 4
         }
       ]);
@@ -413,7 +421,7 @@ describe('duplex', function() {
       expect(patches).toReallyEqual([
         {
           op: 'add',
-          path: '/1',
+          path: '/-',
           value: {
             id: 2,
             name: 'Jerry'
@@ -583,21 +591,21 @@ describe('duplex', function() {
         expect(patches).toReallyEqual([
           ...insertIf(testInvertible, {
             op: 'test',
-            path: '/items/2',
+            path: '/items/:c',
             value: 'c'
           }),
           {
             op: 'remove',
-            path: '/items/2'
+            path: '/items/:c'
           },
           ...insertIf(testInvertible, {
             op: 'test',
-            path: '/items/1',
+            path: '/items/:b',
             value: 'b'
           }),
           {
             op: 'remove',
-            path: '/items/1'
+            path: '/items/:b'
           },
         ]);
 
@@ -788,7 +796,7 @@ describe('duplex', function() {
         expect(patches).toReallyEqual([
           {
             op: 'replace',
-            path: '/foo/1',
+            path: '/foo/:1',
             value: null
           }
         ]);
@@ -952,9 +960,8 @@ describe('duplex', function() {
 
           expect(genereatedPatches).toReallyEqual([
             {
-              op: 'replace',
-              path: '/foo/1',
-              value: null
+              op: 'remove',
+              path: '/foo/:1'
             }
           ]);
           expect(genereatedPatches).toReallyEqual(comparedPatches);

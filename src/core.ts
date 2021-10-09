@@ -126,6 +126,18 @@ const objOps = {
 /* The operations applicable to an array. Many are the same as for the object */
 var arrOps = {
   add: function (arr, i, document) {
+    if (typeof this.value === 'string' || typeof this.value === 'bigint' || typeof this.value === 'boolean' || typeof this.value === 'number') {
+      var idx = arr.findIndex(el => el === this.value);
+      if (idx !== -1) {
+        return { newDocument: document, index: i }
+      }
+    }
+    if (!!this.value._id && this.value._id.length > 0) {
+      var idx = arr.findIndex(el => !!el && el._id === this.value._id);
+      if (idx !== -1) {
+        return { newDocument: document, index: i }
+      }
+    }
     if(isInteger(i)) {
       arr.splice(i, 0, this.value);
     } else { // array props
@@ -164,6 +176,18 @@ export function getValueByPointer(document: any, pointer: string): any {
   var getOriginalDestination = <GetOperation<any>>{ op: "_get", path: pointer };
   applyOperation(document, getOriginalDestination);
   return getOriginalDestination.value;
+}
+
+export function getValue(obj: any, key: any, document: any): any {
+  if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
+    // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
+    var parts = key.split(':');
+    var keyName = parts[0];
+    var keyValue = parts[1];
+    var index = obj.findIndex(el => (keyName == null || keyName.length == 0) ? el == keyValue : el[keyName] == keyValue);
+    return index === -1 ? undefined : obj[index];
+  }
+  return obj[key];
 }
 /**
  * Apply a single JSON Patch Operation on a JSON document.
@@ -260,7 +284,7 @@ export function applyOperation<T>(document: T, operation: Operation, validateOpe
 
       if (validateOperation) {
         if (existingPathFragment === undefined) {
-          if (obj[key] === undefined) {
+          if (getValue(obj, key, document) === undefined) {
             existingPathFragment = keys.slice(0, t).join('/');
           }
           else if (t == len - 1) {
@@ -277,11 +301,22 @@ export function applyOperation<T>(document: T, operation: Operation, validateOpe
           key = obj.length;
         }
         else {
-          if (validateOperation && !isInteger(key)) {
+          var indexById = key.indexOf(':') !== -1
+          if (validateOperation && !isInteger(key) && !indexById) {
             throw new JsonPatchError("Expected an unsigned base-10 integer value, making the new referenced value the array element with the zero-based index", "OPERATION_PATH_ILLEGAL_ARRAY_INDEX", index, operation, document);
           } // only parse key when it's an integer for `arr.prop` to work
           else if(isInteger(key)) {
             key = ~~key;
+          }
+          else if (indexById) {
+            // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
+            var parts = key.split(':');
+            var keyName = parts[0];
+            var keyValue = parts[1];
+            key = obj.findIndex(el => (keyName == null || keyName.length == 0) ? el == keyValue : el[keyName] == keyValue);
+            if (key === -1) {
+              throw new JsonPatchError('Cannot perform the operation at a path that does not exist', 'OPERATION_PATH_UNRESOLVABLE', index, operation, document);
+            }
           }
         }
         if (t >= len) {

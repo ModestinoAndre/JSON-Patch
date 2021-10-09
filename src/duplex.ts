@@ -4,7 +4,7 @@
  * MIT license
  */
 import { _deepClone, _objectKeys, escapePathComponent, hasOwnProperty } from './helpers.js';
-import { applyPatch, Operation } from './core.js';
+import { applyPatch, getValue, Operation } from './core.js';
 
 export interface Observer<T> {
   object: T;
@@ -158,11 +158,9 @@ function _generate(mirror, obj, patches, path, invertible) {
 
   for (var t = oldKeys.length - 1; t >= 0; t--) {
     var key = oldKeys[t];
-    var oldVal = mirror[key];
-
-    if (hasOwnProperty(obj, key) && !(obj[key] === undefined && oldVal !== undefined && Array.isArray(obj) === false)) {
-      var newVal = obj[key];
-
+    var oldVal = getValue(mirror, key, mirror);
+    var newVal = getValue(obj, key, obj);
+    if (hasOwnProperty(obj, key) && !(newVal === undefined && oldVal !== undefined && Array.isArray(obj) === false)) {
       if (typeof oldVal == "object" && oldVal != null && typeof newVal == "object" && newVal != null && Array.isArray(oldVal) === Array.isArray(newVal)) {
         _generate(oldVal, newVal, patches, path + "/" + escapePathComponent(key), invertible);
       }
@@ -197,8 +195,13 @@ function _generate(mirror, obj, patches, path, invertible) {
 
   for (var t = 0; t < newKeys.length; t++) {
     var key = newKeys[t];
-    if (!hasOwnProperty(mirror, key) && obj[key] !== undefined) {
-      patches.push({ op: "add", path: path + "/" + escapePathComponent(key), value: _deepClone(obj[key]) });
+    var newValue = getValue(obj, key, obj);
+    if (!hasOwnProperty(mirror, key) && newValue !== undefined) {
+      if (Array.isArray(obj)) {
+        patches.push({ op: "add", path: path + "/-", value: _deepClone(newValue) });
+      } else {
+        patches.push({ op: "add", path: path + "/" + escapePathComponent(key), value: _deepClone(newValue) });
+      }
     }
   }
 }
