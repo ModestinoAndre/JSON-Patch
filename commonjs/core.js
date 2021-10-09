@@ -53,6 +53,19 @@ var objOps = {
 /* The operations applicable to an array. Many are the same as for the object */
 var arrOps = {
     add: function (arr, i, document) {
+        var _this = this;
+        if (typeof this.value === 'string' || typeof this.value === 'bigint' || typeof this.value === 'boolean' || typeof this.value === 'number') {
+            var idx = arr.findIndex(function (el) { return el === _this.value; });
+            if (idx !== -1) {
+                return { newDocument: document, index: i };
+            }
+        }
+        if (!!this.value._id && this.value._id.length > 0) {
+            var idx = arr.findIndex(function (el) { return !!el && el._id === _this.value._id; });
+            if (idx !== -1) {
+                return { newDocument: document, index: i };
+            }
+        }
         if (helpers_js_1.isInteger(i)) {
             arr.splice(i, 0, this.value);
         }
@@ -93,6 +106,18 @@ function getValueByPointer(document, pointer) {
     return getOriginalDestination.value;
 }
 exports.getValueByPointer = getValueByPointer;
+function getValue(obj, key, document) {
+    if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
+        // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
+        var parts = key.split(':');
+        var keyName = parts[0];
+        var keyValue = parts[1];
+        var index = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : el[keyName] == keyValue; });
+        return index === -1 ? undefined : obj[index];
+    }
+    return obj[key];
+}
+exports.getValue = getValue;
 /**
  * Apply a single JSON Patch Operation on a JSON document.
  * Returns the {newDocument, result} of the operation.
@@ -195,7 +220,7 @@ function applyOperation(document, operation, validateOperation, mutateDocument, 
             }
             if (validateOperation) {
                 if (existingPathFragment === undefined) {
-                    if (obj[key] === undefined) {
+                    if (getValue(obj, key, document) === undefined) {
                         existingPathFragment = keys.slice(0, t).join('/');
                     }
                     else if (t == len - 1) {
@@ -212,11 +237,22 @@ function applyOperation(document, operation, validateOperation, mutateDocument, 
                     key = obj.length;
                 }
                 else {
-                    if (validateOperation && !helpers_js_1.isInteger(key)) {
+                    var indexById = key.indexOf(':') !== -1;
+                    if (validateOperation && !helpers_js_1.isInteger(key) && !indexById) {
                         throw new exports.JsonPatchError("Expected an unsigned base-10 integer value, making the new referenced value the array element with the zero-based index", "OPERATION_PATH_ILLEGAL_ARRAY_INDEX", index, operation, document);
                     } // only parse key when it's an integer for `arr.prop` to work
                     else if (helpers_js_1.isInteger(key)) {
                         key = ~~key;
+                    }
+                    else if (indexById) {
+                        // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
+                        var parts = key.split(':');
+                        var keyName = parts[0];
+                        var keyValue = parts[1];
+                        key = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : el[keyName] == keyValue; });
+                        if (key === -1) {
+                            throw new exports.JsonPatchError('Cannot perform the operation at a path that does not exist', 'OPERATION_PATH_UNRESOLVABLE', index, operation, document);
+                        }
                     }
                 }
                 if (t >= len) {

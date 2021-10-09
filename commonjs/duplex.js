@@ -1,7 +1,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 /*!
  * https://github.com/Starcounter-Jack/JSON-Patch
- * (c) 2017 Joachim Wester
+ * (c) 2017-2021 Joachim Wester
  * MIT license
  */
 var helpers_js_1 = require("./helpers.js");
@@ -128,9 +128,9 @@ function _generate(mirror, obj, patches, path, invertible) {
     //if ever "move" operation is implemented here, make sure this test runs OK: "should not generate the same patch twice (move)"
     for (var t = oldKeys.length - 1; t >= 0; t--) {
         var key = oldKeys[t];
-        var oldVal = mirror[key];
-        if (helpers_js_1.hasOwnProperty(obj, key) && !(obj[key] === undefined && oldVal !== undefined && Array.isArray(obj) === false)) {
-            var newVal = obj[key];
+        var oldVal = core_js_1.getValue(mirror, key, mirror);
+        var newVal = core_js_1.getValue(obj, key, obj);
+        if (helpers_js_1.hasOwnProperty(obj, key) && !(newVal === undefined && oldVal !== undefined && Array.isArray(obj) === false)) {
             if (typeof oldVal == "object" && oldVal != null && typeof newVal == "object" && newVal != null && Array.isArray(oldVal) === Array.isArray(newVal)) {
                 _generate(oldVal, newVal, patches, path + "/" + helpers_js_1.escapePathComponent(key), invertible);
             }
@@ -164,8 +164,14 @@ function _generate(mirror, obj, patches, path, invertible) {
     }
     for (var t = 0; t < newKeys.length; t++) {
         var key = newKeys[t];
-        if (!helpers_js_1.hasOwnProperty(mirror, key) && obj[key] !== undefined) {
-            patches.push({ op: "add", path: path + "/" + helpers_js_1.escapePathComponent(key), value: helpers_js_1._deepClone(obj[key]) });
+        var newValue = core_js_1.getValue(obj, key, obj);
+        if (!helpers_js_1.hasOwnProperty(mirror, key) && newValue !== undefined) {
+            if (Array.isArray(obj)) {
+                patches.push({ op: "add", path: path + "/-", value: helpers_js_1._deepClone(newValue) });
+            }
+            else {
+                patches.push({ op: "add", path: path + "/" + helpers_js_1.escapePathComponent(key), value: helpers_js_1._deepClone(newValue) });
+            }
         }
     }
 }

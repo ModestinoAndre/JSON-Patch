@@ -111,14 +111,40 @@ var __extends = (this && this.__extends) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 var _hasOwnProperty = Object.prototype.hasOwnProperty;
 function hasOwnProperty(obj, key) {
+    if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
+        // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
+        var parts = key.split(':');
+        var keyName = parts[0];
+        var keyValue = parts[1];
+        var index = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : el[keyName] == keyValue; });
+        return index !== -1;
+    }
     return _hasOwnProperty.call(obj, key);
 }
 exports.hasOwnProperty = hasOwnProperty;
 function _objectKeys(obj) {
+    if (obj == null) {
+        return [];
+    }
     if (Array.isArray(obj)) {
         var keys = new Array(obj.length);
         for (var k = 0; k < keys.length; k++) {
-            keys[k] = "" + k;
+            var key = "" + k;
+            var el = obj[key];
+            if (!!el) {
+                if (el._id != null && el._id.length > 0) {
+                    keys[k] = '_id:' + el._id;
+                }
+                else if (typeof el === 'string' || typeof el === 'bigint' || typeof el === 'boolean' || typeof el === 'number') {
+                    keys[k] = ':' + el;
+                }
+                else {
+                    keys[k] = key;
+                }
+            }
+            else {
+                keys[k] = key;
+            }
         }
         return keys;
     }
@@ -188,6 +214,7 @@ function unescapePathComponent(path) {
     return path.replace(/~1/g, '/').replace(/~0/g, '~');
 }
 exports.unescapePathComponent = unescapePathComponent;
+// TODO: modify for _id:id
 function _getPathRecursive(root, obj) {
     var found;
     for (var key in root) {
@@ -332,6 +359,19 @@ var objOps = {
 /* The operations applicable to an array. Many are the same as for the object */
 var arrOps = {
     add: function (arr, i, document) {
+        var _this = this;
+        if (typeof this.value === 'string' || typeof this.value === 'bigint' || typeof this.value === 'boolean' || typeof this.value === 'number') {
+            var idx = arr.findIndex(function (el) { return el === _this.value; });
+            if (idx !== -1) {
+                return { newDocument: document, index: i };
+            }
+        }
+        if (!!this.value._id && this.value._id.length > 0) {
+            var idx = arr.findIndex(function (el) { return !!el && el._id === _this.value._id; });
+            if (idx !== -1) {
+                return { newDocument: document, index: i };
+            }
+        }
         if (helpers_js_1.isInteger(i)) {
             arr.splice(i, 0, this.value);
         }
@@ -372,6 +412,18 @@ function getValueByPointer(document, pointer) {
     return getOriginalDestination.value;
 }
 exports.getValueByPointer = getValueByPointer;
+function getValue(obj, key, document) {
+    if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
+        // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
+        var parts = key.split(':');
+        var keyName = parts[0];
+        var keyValue = parts[1];
+        var index = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : el[keyName] == keyValue; });
+        return index === -1 ? undefined : obj[index];
+    }
+    return obj[key];
+}
+exports.getValue = getValue;
 /**
  * Apply a single JSON Patch Operation on a JSON document.
  * Returns the {newDocument, result} of the operation.
@@ -467,12 +519,14 @@ function applyOperation(document, operation, validateOperation, mutateDocument, 
             if (key && key.indexOf('~') != -1) {
                 key = helpers_js_1.unescapePathComponent(key);
             }
-            if (banPrototypeModifications && key == '__proto__') {
-                throw new TypeError('JSON-Patch: modifying `__proto__` prop is banned for security reasons, if this was on purpose, please set `banPrototypeModifications` flag false and pass it to this function. More info in fast-json-patch README');
+            if (banPrototypeModifications &&
+                (key == '__proto__' ||
+                    (key == 'prototype' && t > 0 && keys[t - 1] == 'constructor'))) {
+                throw new TypeError('JSON-Patch: modifying `__proto__` or `constructor/prototype` prop is banned for security reasons, if this was on purpose, please set `banPrototypeModifications` flag false and pass it to this function. More info in fast-json-patch README');
             }
             if (validateOperation) {
                 if (existingPathFragment === undefined) {
-                    if (obj[key] === undefined) {
+                    if (getValue(obj, key, document) === undefined) {
                         existingPathFragment = keys.slice(0, t).join('/');
                     }
                     else if (t == len - 1) {
@@ -489,11 +543,22 @@ function applyOperation(document, operation, validateOperation, mutateDocument, 
                     key = obj.length;
                 }
                 else {
-                    if (validateOperation && !helpers_js_1.isInteger(key)) {
+                    var indexById = key.indexOf(':') !== -1;
+                    if (validateOperation && !helpers_js_1.isInteger(key) && !indexById) {
                         throw new exports.JsonPatchError("Expected an unsigned base-10 integer value, making the new referenced value the array element with the zero-based index", "OPERATION_PATH_ILLEGAL_ARRAY_INDEX", index, operation, document);
                     } // only parse key when it's an integer for `arr.prop` to work
                     else if (helpers_js_1.isInteger(key)) {
                         key = ~~key;
+                    }
+                    else if (indexById) {
+                        // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
+                        var parts = key.split(':');
+                        var keyName = parts[0];
+                        var keyValue = parts[1];
+                        key = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : el[keyName] == keyValue; });
+                        if (key === -1) {
+                            throw new exports.JsonPatchError('Cannot perform the operation at a path that does not exist', 'OPERATION_PATH_UNRESOLVABLE', index, operation, document);
+                        }
                     }
                 }
                 if (t >= len) {
@@ -742,7 +807,7 @@ exports.unescapePathComponent = helpers.unescapePathComponent;
 Object.defineProperty(exports, "__esModule", { value: true });
 /*!
  * https://github.com/Starcounter-Jack/JSON-Patch
- * (c) 2017 Joachim Wester
+ * (c) 2017-2021 Joachim Wester
  * MIT license
  */
 var helpers_js_1 = __webpack_require__(0);
@@ -869,9 +934,9 @@ function _generate(mirror, obj, patches, path, invertible) {
     //if ever "move" operation is implemented here, make sure this test runs OK: "should not generate the same patch twice (move)"
     for (var t = oldKeys.length - 1; t >= 0; t--) {
         var key = oldKeys[t];
-        var oldVal = mirror[key];
-        if (helpers_js_1.hasOwnProperty(obj, key) && !(obj[key] === undefined && oldVal !== undefined && Array.isArray(obj) === false)) {
-            var newVal = obj[key];
+        var oldVal = core_js_1.getValue(mirror, key, mirror);
+        var newVal = core_js_1.getValue(obj, key, obj);
+        if (helpers_js_1.hasOwnProperty(obj, key) && !(newVal === undefined && oldVal !== undefined && Array.isArray(obj) === false)) {
             if (typeof oldVal == "object" && oldVal != null && typeof newVal == "object" && newVal != null && Array.isArray(oldVal) === Array.isArray(newVal)) {
                 _generate(oldVal, newVal, patches, path + "/" + helpers_js_1.escapePathComponent(key), invertible);
             }
@@ -905,8 +970,14 @@ function _generate(mirror, obj, patches, path, invertible) {
     }
     for (var t = 0; t < newKeys.length; t++) {
         var key = newKeys[t];
-        if (!helpers_js_1.hasOwnProperty(mirror, key) && obj[key] !== undefined) {
-            patches.push({ op: "add", path: path + "/" + helpers_js_1.escapePathComponent(key), value: helpers_js_1._deepClone(obj[key]) });
+        var newValue = core_js_1.getValue(obj, key, obj);
+        if (!helpers_js_1.hasOwnProperty(mirror, key) && newValue !== undefined) {
+            if (Array.isArray(obj)) {
+                patches.push({ op: "add", path: path + "/-", value: helpers_js_1._deepClone(newValue) });
+            }
+            else {
+                patches.push({ op: "add", path: path + "/" + helpers_js_1.escapePathComponent(key), value: helpers_js_1._deepClone(newValue) });
+            }
         }
     }
 }

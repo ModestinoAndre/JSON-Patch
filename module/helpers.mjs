@@ -18,13 +18,39 @@ var __extends = (this && this.__extends) || (function () {
 })();
 var _hasOwnProperty = Object.prototype.hasOwnProperty;
 export function hasOwnProperty(obj, key) {
+    if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
+        // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
+        var parts = key.split(':');
+        var keyName = parts[0];
+        var keyValue = parts[1];
+        var index = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : el[keyName] == keyValue; });
+        return index !== -1;
+    }
     return _hasOwnProperty.call(obj, key);
 }
 export function _objectKeys(obj) {
+    if (obj == null) {
+        return [];
+    }
     if (Array.isArray(obj)) {
         var keys = new Array(obj.length);
         for (var k = 0; k < keys.length; k++) {
-            keys[k] = "" + k;
+            var key = "" + k;
+            var el = obj[key];
+            if (!!el) {
+                if (el._id != null && el._id.length > 0) {
+                    keys[k] = '_id:' + el._id;
+                }
+                else if (typeof el === 'string' || typeof el === 'bigint' || typeof el === 'boolean' || typeof el === 'number') {
+                    keys[k] = ':' + el;
+                }
+                else {
+                    keys[k] = key;
+                }
+            }
+            else {
+                keys[k] = key;
+            }
         }
         return keys;
     }
@@ -89,6 +115,7 @@ export function escapePathComponent(path) {
 export function unescapePathComponent(path) {
     return path.replace(/~1/g, '/').replace(/~0/g, '~');
 }
+// TODO: modify for _id:id
 export function _getPathRecursive(root, obj) {
     var found;
     for (var key in root) {
