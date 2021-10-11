@@ -247,7 +247,7 @@ export function applyOperation(document, operation, validateOperation, mutateDoc
                         var keyName = parts[0];
                         var keyValue = parts[1];
                         key = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : el[keyName] == keyValue; });
-                        if (key === -1) {
+                        if (validateOperation && key === -1) {
                             throw new JsonPatchError('Cannot perform the operation at a path that does not exist', 'OPERATION_PATH_UNRESOLVABLE', index, operation, document);
                         }
                     }
