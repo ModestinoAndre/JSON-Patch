@@ -59,7 +59,7 @@ var arrOps = {
                 return { newDocument: document, index: i };
             }
         }
-        if (!!this.value._id && this.value._id.length > 0) {
+        if (this.value._id) {
             var idx = arr.findIndex(function (el) { return !!el && el._id === _this.value._id; });
             if (idx !== -1) {
                 return { newDocument: document, index: i };

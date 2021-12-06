@@ -38,7 +38,7 @@ export function _objectKeys(obj) {
             var key = "" + k;
             var el = obj[key];
             if (!!el) {
-                if (el._id != null && el._id.length > 0) {
+                if (el._id) {
                     keys[k] = '_id:' + el._id;
                 }
                 else if (typeof el === 'string' || typeof el === 'bigint' || typeof el === 'boolean' || typeof el === 'number') {

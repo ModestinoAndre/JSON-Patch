@@ -132,7 +132,7 @@ function _objectKeys(obj) {
             var key = "" + k;
             var el = obj[key];
             if (!!el) {
-                if (el._id != null && el._id.length > 0) {
+                if (el._id) {
                     keys[k] = '_id:' + el._id;
                 }
                 else if (typeof el === 'string' || typeof el === 'bigint' || typeof el === 'boolean' || typeof el === 'number') {
@@ -366,7 +366,7 @@ var arrOps = {
                 return { newDocument: document, index: i };
             }
         }
-        if (!!this.value._id && this.value._id.length > 0) {
+        if (this.value._id) {
             var idx = arr.findIndex(function (el) { return !!el && el._id === _this.value._id; });
             if (idx !== -1) {
                 return { newDocument: document, index: i };
