@@ -394,6 +394,11 @@ export default [
         "patch": [{"op": "remove", "path": "/roles/_id:1b"}],
         "expected": {"foo": 1, roles: [{ _id: '1a', n: 'a'}, { _id: '1c', n: 'c'}]} },
 
+    { "comment": "remove from array by otherId:value",
+        "doc": {"foo": 1, roles: [{ otherId: '1a', n: 'a'}, { otherId: '1b', n: 'b'}, { otherId: '1c', n: 'c'}]},
+        "patch": [{"op": "remove", "path": "/roles/otherId:1b"}],
+        "expected": {"foo": 1, roles: [{ otherId: '1a', n: 'a'}, { otherId: '1c', n: 'c'}]} },
+
     { "comment": "remove all elements from array by _id:value",
         "doc": {"foo": 1, roles: [{ _id: '1a', n: 'a'}, { _id: '1b', n: 'b'}, { _id: '1c', n: 'c'}]},
         "patch": [{"op": "remove", "path": "/roles/_id:1b"},
@@ -401,19 +406,41 @@ export default [
             {"op": "remove", "path": "/roles/_id:1c"}],
         "expected": {"foo": 1, roles: []} },
 
+    { "comment": "remove all elements from array by otherId:value",
+        "doc": {"foo": 1, roles: [{ otherId: '1a', n: 'a'}, { otherId: '1b', n: 'b'}, { otherId: '1c', n: 'c'}]},
+        "patch": [{"op": "remove", "path": "/roles/otherId:1b"},
+            {"op": "remove", "path": "/roles/otherId:1a"},
+            {"op": "remove", "path": "/roles/otherId:1c"}],
+        "expected": {"foo": 1, roles: []} },
+
     { "comment": "replace inside array object element by _id:value",
         "doc": {"foo": 1, roles: [{ _id: '1a', n: 'a'}, { _id: '1b', n: 'b'}, { _id: '1c', n: 'c'}]},
         "patch": [{"op": "replace", "path": "/roles/_id:1b/n", "value": 'bb'}],
         "expected": {"foo": 1, roles: [{ _id: '1a', n: 'a'}, { _id: '1b', n: 'bb'}, { _id: '1c', n: 'c'}]} },
+
+    { "comment": "replace inside array object element by otherId:value",
+        "doc": {"foo": 1, roles: [{ otherId: '1a', n: 'a'}, { otherId: '1b', n: 'b'}, { otherId: '1c', n: 'c'}]},
+        "patch": [{"op": "replace", "path": "/roles/otherId:1b/n", "value": 'bb'}],
+        "expected": {"foo": 1, roles: [{ otherId: '1a', n: 'a'}, { otherId: '1b', n: 'bb'}, { otherId: '1c', n: 'c'}]} },
 
     { "comment": "add inside array object element by _id:value",
         "doc": {"foo": 1, roles: [{ _id: '1a', n: 'a'}, { _id: '1b', n: 'b'}, { _id: '1c', n: 'c'}]},
         "patch": [{"op": "add", "path": "/roles/_id:1b/age", "value": 10}],
         "expected": {"foo": 1, roles: [{ _id: '1a', n: 'a'}, { _id: '1b', n: 'b', age: 10}, { _id: '1c', n: 'c'}]} },
 
+    { "comment": "add inside array object element by otherId:value",
+        "doc": {"foo": 1, roles: [{ otherId: '1a', n: 'a'}, { otherId: '1b', n: 'b'}, { otherId: '1c', n: 'c'}]},
+        "patch": [{"op": "add", "path": "/roles/otherId:1b/age", "value": 10}],
+        "expected": {"foo": 1, roles: [{ otherId: '1a', n: 'a'}, { otherId: '1b', n: 'b', age: 10}, { otherId: '1c', n: 'c'}]} },
+
     { "comment": "remove inside array object element by _id:value",
         "doc": {"foo": 1, roles: [{ _id: '1a', n: 'a'}, { _id: '1b', n: 'b'}, { _id: '1c', n: 'c'}]},
         "patch": [{"op": "remove", "path": "/roles/_id:1b/n"}],
         "expected": {"foo": 1, roles: [{ _id: '1a', n: 'a'}, { _id: '1b'}, { _id: '1c', n: 'c'}]} },
+
+    { "comment": "remove inside array object element by otherId:value",
+        "doc": {"foo": 1, roles: [{ otherId: '1a', n: 'a'}, { otherId: '1b', n: 'b'}, { otherId: '1c', n: 'c'}]},
+        "patch": [{"op": "remove", "path": "/roles/otherId:1b/n"}],
+        "expected": {"foo": 1, roles: [{ otherId: '1a', n: 'a'}, { otherId: '1b'}, { otherId: '1c', n: 'c'}]} },
 
 ]

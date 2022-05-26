@@ -16,6 +16,18 @@ var __extends = (this && this.__extends) || (function () {
         d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
     };
 })();
+export function getValue(obj, key, document) {
+    if (document === void 0) { document = undefined; }
+    if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
+        // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
+        var parts = key.split(':');
+        var keyName = parts[0];
+        var keyValue = parts[1];
+        var index = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : el[keyName] == keyValue; });
+        return index === -1 ? undefined : obj[index];
+    }
+    return obj[key];
+}
 var _hasOwnProperty = Object.prototype.hasOwnProperty;
 export function hasOwnProperty(obj, key) {
     if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
@@ -28,7 +40,8 @@ export function hasOwnProperty(obj, key) {
     }
     return _hasOwnProperty.call(obj, key);
 }
-export function _objectKeys(obj) {
+export function _objectKeys(obj, idFieldNames) {
+    if (idFieldNames === void 0) { idFieldNames = ['_id']; }
     if (obj == null) {
         return [];
     }
@@ -38,8 +51,9 @@ export function _objectKeys(obj) {
             var key = "" + k;
             var el = obj[key];
             if (!!el) {
-                if (el._id != null && el._id.length > 0) {
-                    keys[k] = '_id:' + el._id;
+                var idFN = idFieldNames.find(function (idField) { return !!el[idField]; });
+                if (idFN) {
+                    keys[k] = idFN + ':' + el[idFN];
                 }
                 else if (typeof el === 'string' || typeof el === 'bigint' || typeof el === 'boolean' || typeof el === 'number') {
                     keys[k] = ':' + el;
@@ -162,7 +176,8 @@ export function hasUndefined(obj) {
             var objKeys = _objectKeys(obj);
             var objKeysLength = objKeys.length;
             for (var i = 0; i < objKeysLength; i++) {
-                if (hasUndefined(obj[objKeys[i]])) {
+                var value = getValue(obj, objKeys[i]);
+                if (hasUndefined(value)) {
                     return true;
                 }
             }

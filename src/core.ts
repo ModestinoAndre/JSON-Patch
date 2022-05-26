@@ -5,7 +5,7 @@
  */
 declare var require: any;
 
-import { PatchError, _deepClone, isInteger, unescapePathComponent, hasUndefined } from './helpers.js';
+import { PatchError, _deepClone, isInteger, unescapePathComponent, hasUndefined, getValue } from './helpers.js';
 
 export const JsonPatchError = PatchError;
 export const deepClone = _deepClone;
@@ -125,15 +125,16 @@ const objOps = {
 
 /* The operations applicable to an array. Many are the same as for the object */
 var arrOps = {
-  add: function (arr, i, document) {
+  add: function (arr, i, document, idFieldNames  = ['_id']) {
     if (typeof this.value === 'string' || typeof this.value === 'bigint' || typeof this.value === 'boolean' || typeof this.value === 'number') {
       var idx = arr.findIndex(el => el === this.value);
       if (idx !== -1) {
         return { newDocument: document, index: i }
       }
     }
-    if (!!this.value._id && this.value._id.length > 0) {
-      var idx = arr.findIndex(el => !!el && el._id === this.value._id);
+    const idFN = idFieldNames.find(idField => !!this.value[idField]);
+    if (idFN) {
+      var idx = arr.findIndex(el => !!el && el[idFN] === this.value[idFN]);
       if (idx !== -1) {
         return { newDocument: document, index: i }
       }
@@ -147,10 +148,12 @@ var arrOps = {
     return { newDocument: document, index: i }
   },
   remove: function (arr, i, document) {
+    // TODO: check for idFieldNames
     var removedList = arr.splice(i, 1);
     return { newDocument: document, removed: removedList[0] };
   },
   replace: function (arr, i, document) {
+    // TODO: check for idFieldNames
     var removed = arr[i];
     arr[i] = this.value;
     return { newDocument: document, removed };
@@ -177,18 +180,6 @@ export function getValueByPointer(document: any, pointer: string): any {
   applyOperation(document, getOriginalDestination);
   return getOriginalDestination.value;
 }
-
-export function getValue(obj: any, key: any, document: any): any {
-  if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
-    // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
-    var parts = key.split(':');
-    var keyName = parts[0];
-    var keyValue = parts[1];
-    var index = obj.findIndex(el => (keyName == null || keyName.length == 0) ? el == keyValue : el[keyName] == keyValue);
-    return index === -1 ? undefined : obj[index];
-  }
-  return obj[key];
-}
 /**
  * Apply a single JSON Patch Operation on a JSON document.
  * Returns the {newDocument, result} of the operation.
@@ -201,9 +192,16 @@ export function getValue(obj: any, key: any, document: any): any {
  * @param validateOperation `false` is without validation, `true` to use default jsonpatch's validation, or you can pass a `validateOperation` callback to be used for validation.
  * @param mutateDocument Whether to mutate the original document or clone it before applying
  * @param banPrototypeModifications Whether to ban modifications to `__proto__`, defaults to `true`.
+ * @param idFieldNames Array with possible names for id-fields, e.g. ['_id', 'id']
  * @return `{newDocument, result}` after the operation
  */
-export function applyOperation<T>(document: T, operation: Operation, validateOperation: boolean | Validator<T> = false, mutateDocument: boolean = true, banPrototypeModifications: boolean = true, index: number = 0): OperationResult<T> {
+export function applyOperation<T>(document: T,
+                                  operation: Operation,
+                                  validateOperation: boolean | Validator<T> = false,
+                                  mutateDocument: boolean = true,
+                                  banPrototypeModifications: boolean = true,
+                                  index: number = 0,
+                                  idFieldNames  = ['_id']): OperationResult<T> {
   if (validateOperation) {
     if (typeof validateOperation == 'function') {
       validateOperation(operation, 0, document, operation.path);
@@ -323,7 +321,7 @@ export function applyOperation<T>(document: T, operation: Operation, validateOpe
           if (validateOperation && operation.op === "add" && key > obj.length) {
             throw new JsonPatchError("The specified index MUST NOT be greater than the number of elements in the array", "OPERATION_VALUE_OUT_OF_BOUNDS", index, operation, document);
           }
-          const returnValue = arrOps[operation.op].call(operation, obj, key, document); // Apply patch
+          const returnValue = arrOps[operation.op].call(operation, obj, key, document, idFieldNames); // Apply patch
           if (returnValue.test === false) {
             throw new JsonPatchError("Test operation failed", 'TEST_OPERATION_FAILED', index, operation, document);
           }
@@ -361,9 +359,15 @@ export function applyOperation<T>(document: T, operation: Operation, validateOpe
  * @param validateOperation `false` is without validation, `true` to use default jsonpatch's validation, or you can pass a `validateOperation` callback to be used for validation.
  * @param mutateDocument Whether to mutate the original document or clone it before applying
  * @param banPrototypeModifications Whether to ban modifications to `__proto__`, defaults to `true`.
+ * @param idFieldNames Array with possible names for id-fields, e.g. ['_id', 'id']
  * @return An array of `{newDocument, result}` after the patch
  */
-export function applyPatch<T>(document: T, patch: ReadonlyArray<Operation>, validateOperation?: boolean | Validator<T>, mutateDocument: boolean = true, banPrototypeModifications: boolean = true): PatchResult<T> {
+export function applyPatch<T>(document: T,
+                              patch: ReadonlyArray<Operation>,
+                              validateOperation?: boolean | Validator<T>,
+                              mutateDocument: boolean = true,
+                              banPrototypeModifications: boolean = true,
+                              idFieldNames  = ['_id']): PatchResult<T> {
   if(validateOperation) {
     if(!Array.isArray(patch)) {
       throw new JsonPatchError('Patch sequence must be an array', 'SEQUENCE_NOT_AN_ARRAY');
@@ -376,7 +380,7 @@ export function applyPatch<T>(document: T, patch: ReadonlyArray<Operation>, vali
 
   for (let i = 0, length = patch.length; i < length; i++) {
     // we don't need to pass mutateDocument argument because if it was true, we already deep cloned the object, we'll just pass `true`
-    results[i] = applyOperation(document, patch[i], validateOperation, true, banPrototypeModifications, i);
+    results[i] = applyOperation(document, patch[i], validateOperation, true, banPrototypeModifications, i, idFieldNames);
     document = results[i].newDocument; // in case root was replaced
   }
   results.newDocument = document;

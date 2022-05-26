@@ -109,6 +109,19 @@ var __extends = (this && this.__extends) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+function getValue(obj, key, document) {
+    if (document === void 0) { document = undefined; }
+    if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
+        // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
+        var parts = key.split(':');
+        var keyName = parts[0];
+        var keyValue = parts[1];
+        var index = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : el[keyName] == keyValue; });
+        return index === -1 ? undefined : obj[index];
+    }
+    return obj[key];
+}
+exports.getValue = getValue;
 var _hasOwnProperty = Object.prototype.hasOwnProperty;
 function hasOwnProperty(obj, key) {
     if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
@@ -122,7 +135,8 @@ function hasOwnProperty(obj, key) {
     return _hasOwnProperty.call(obj, key);
 }
 exports.hasOwnProperty = hasOwnProperty;
-function _objectKeys(obj) {
+function _objectKeys(obj, idFieldNames) {
+    if (idFieldNames === void 0) { idFieldNames = ['_id']; }
     if (obj == null) {
         return [];
     }
@@ -132,8 +146,9 @@ function _objectKeys(obj) {
             var key = "" + k;
             var el = obj[key];
             if (!!el) {
-                if (el._id != null && el._id.length > 0) {
-                    keys[k] = '_id:' + el._id;
+                var idFN = idFieldNames.find(function (idField) { return !!el[idField]; });
+                if (idFN) {
+                    keys[k] = idFN + ':' + el[idFN];
                 }
                 else if (typeof el === 'string' || typeof el === 'bigint' || typeof el === 'boolean' || typeof el === 'number') {
                     keys[k] = ':' + el;
@@ -263,7 +278,8 @@ function hasUndefined(obj) {
             var objKeys = _objectKeys(obj);
             var objKeysLength = objKeys.length;
             for (var i = 0; i < objKeysLength; i++) {
-                if (hasUndefined(obj[objKeys[i]])) {
+                var value = getValue(obj, objKeys[i]);
+                if (hasUndefined(value)) {
                     return true;
                 }
             }
@@ -358,16 +374,18 @@ var objOps = {
 };
 /* The operations applicable to an array. Many are the same as for the object */
 var arrOps = {
-    add: function (arr, i, document) {
+    add: function (arr, i, document, idFieldNames) {
         var _this = this;
+        if (idFieldNames === void 0) { idFieldNames = ['_id']; }
         if (typeof this.value === 'string' || typeof this.value === 'bigint' || typeof this.value === 'boolean' || typeof this.value === 'number') {
             var idx = arr.findIndex(function (el) { return el === _this.value; });
             if (idx !== -1) {
                 return { newDocument: document, index: i };
             }
         }
-        if (!!this.value._id && this.value._id.length > 0) {
-            var idx = arr.findIndex(function (el) { return !!el && el._id === _this.value._id; });
+        var idFN = idFieldNames.find(function (idField) { return !!_this.value[idField]; });
+        if (idFN) {
+            var idx = arr.findIndex(function (el) { return !!el && el[idFN] === _this.value[idFN]; });
             if (idx !== -1) {
                 return { newDocument: document, index: i };
             }
@@ -382,10 +400,12 @@ var arrOps = {
         return { newDocument: document, index: i };
     },
     remove: function (arr, i, document) {
+        // TODO: check for idFieldNames
         var removedList = arr.splice(i, 1);
         return { newDocument: document, removed: removedList[0] };
     },
     replace: function (arr, i, document) {
+        // TODO: check for idFieldNames
         var removed = arr[i];
         arr[i] = this.value;
         return { newDocument: document, removed: removed };
@@ -412,18 +432,6 @@ function getValueByPointer(document, pointer) {
     return getOriginalDestination.value;
 }
 exports.getValueByPointer = getValueByPointer;
-function getValue(obj, key, document) {
-    if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
-        // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
-        var parts = key.split(':');
-        var keyName = parts[0];
-        var keyValue = parts[1];
-        var index = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : el[keyName] == keyValue; });
-        return index === -1 ? undefined : obj[index];
-    }
-    return obj[key];
-}
-exports.getValue = getValue;
 /**
  * Apply a single JSON Patch Operation on a JSON document.
  * Returns the {newDocument, result} of the operation.
@@ -436,13 +444,15 @@ exports.getValue = getValue;
  * @param validateOperation `false` is without validation, `true` to use default jsonpatch's validation, or you can pass a `validateOperation` callback to be used for validation.
  * @param mutateDocument Whether to mutate the original document or clone it before applying
  * @param banPrototypeModifications Whether to ban modifications to `__proto__`, defaults to `true`.
+ * @param idFieldNames Array with possible names for id-fields, e.g. ['_id', 'id']
  * @return `{newDocument, result}` after the operation
  */
-function applyOperation(document, operation, validateOperation, mutateDocument, banPrototypeModifications, index) {
+function applyOperation(document, operation, validateOperation, mutateDocument, banPrototypeModifications, index, idFieldNames) {
     if (validateOperation === void 0) { validateOperation = false; }
     if (mutateDocument === void 0) { mutateDocument = true; }
     if (banPrototypeModifications === void 0) { banPrototypeModifications = true; }
     if (index === void 0) { index = 0; }
+    if (idFieldNames === void 0) { idFieldNames = ['_id']; }
     if (validateOperation) {
         if (typeof validateOperation == 'function') {
             validateOperation(operation, 0, document, operation.path);
@@ -526,7 +536,7 @@ function applyOperation(document, operation, validateOperation, mutateDocument, 
             }
             if (validateOperation) {
                 if (existingPathFragment === undefined) {
-                    if (getValue(obj, key, document) === undefined) {
+                    if (helpers_js_1.getValue(obj, key, document) === undefined) {
                         existingPathFragment = keys.slice(0, t).join('/');
                     }
                     else if (t == len - 1) {
@@ -565,7 +575,7 @@ function applyOperation(document, operation, validateOperation, mutateDocument, 
                     if (validateOperation && operation.op === "add" && key > obj.length) {
                         throw new exports.JsonPatchError("The specified index MUST NOT be greater than the number of elements in the array", "OPERATION_VALUE_OUT_OF_BOUNDS", index, operation, document);
                     }
-                    var returnValue = arrOps[operation.op].call(operation, obj, key, document); // Apply patch
+                    var returnValue = arrOps[operation.op].call(operation, obj, key, document, idFieldNames); // Apply patch
                     if (returnValue.test === false) {
                         throw new exports.JsonPatchError("Test operation failed", 'TEST_OPERATION_FAILED', index, operation, document);
                     }
@@ -603,11 +613,13 @@ exports.applyOperation = applyOperation;
  * @param validateOperation `false` is without validation, `true` to use default jsonpatch's validation, or you can pass a `validateOperation` callback to be used for validation.
  * @param mutateDocument Whether to mutate the original document or clone it before applying
  * @param banPrototypeModifications Whether to ban modifications to `__proto__`, defaults to `true`.
+ * @param idFieldNames Array with possible names for id-fields, e.g. ['_id', 'id']
  * @return An array of `{newDocument, result}` after the patch
  */
-function applyPatch(document, patch, validateOperation, mutateDocument, banPrototypeModifications) {
+function applyPatch(document, patch, validateOperation, mutateDocument, banPrototypeModifications, idFieldNames) {
     if (mutateDocument === void 0) { mutateDocument = true; }
     if (banPrototypeModifications === void 0) { banPrototypeModifications = true; }
+    if (idFieldNames === void 0) { idFieldNames = ['_id']; }
     if (validateOperation) {
         if (!Array.isArray(patch)) {
             throw new exports.JsonPatchError('Patch sequence must be an array', 'SEQUENCE_NOT_AN_ARRAY');
@@ -619,7 +631,7 @@ function applyPatch(document, patch, validateOperation, mutateDocument, banProto
     var results = new Array(patch.length);
     for (var i = 0, length_1 = patch.length; i < length_1; i++) {
         // we don't need to pass mutateDocument argument because if it was true, we already deep cloned the object, we'll just pass `true`
-        results[i] = applyOperation(document, patch[i], validateOperation, true, banPrototypeModifications, i);
+        results[i] = applyOperation(document, patch[i], validateOperation, true, banPrototypeModifications, i, idFieldNames);
         document = results[i].newDocument; // in case root was replaced
     }
     results.newDocument = document;
@@ -846,7 +858,8 @@ exports.unobserve = unobserve;
 /**
  * Observes changes made to an object, which can then be retrieved using generate
  */
-function observe(obj, callback) {
+function observe(obj, callback, idFieldNames) {
+    if (idFieldNames === void 0) { idFieldNames = ['_id']; }
     var patches = [];
     var observer;
     var mirror = getMirror(obj);
@@ -867,7 +880,7 @@ function observe(obj, callback) {
         observer.callback = callback;
         observer.next = null;
         var dirtyCheck = function () {
-            generate(observer);
+            generate(observer, false, idFieldNames);
         };
         var fastCheck = function () {
             clearTimeout(observer.next);
@@ -884,7 +897,7 @@ function observe(obj, callback) {
     observer.patches = patches;
     observer.object = obj;
     observer.unobserve = function () {
-        generate(observer);
+        generate(observer, false, idFieldNames);
         clearTimeout(observer.next);
         removeObserverFromMirror(mirror, observer);
         if (typeof window !== 'undefined') {
@@ -902,10 +915,11 @@ exports.observe = observe;
 /**
  * Generate an array of patches from an observer
  */
-function generate(observer, invertible) {
+function generate(observer, invertible, idFieldNames) {
     if (invertible === void 0) { invertible = false; }
+    if (idFieldNames === void 0) { idFieldNames = ['_id']; }
     var mirror = beforeDict.get(observer.object);
-    _generate(mirror.value, observer.object, observer.patches, "", invertible);
+    _generate(mirror.value, observer.object, observer.patches, "", invertible, idFieldNames);
     if (observer.patches.length) {
         core_js_1.applyPatch(mirror.value, observer.patches);
     }
@@ -920,25 +934,26 @@ function generate(observer, invertible) {
 }
 exports.generate = generate;
 // Dirty check if obj is different from mirror, generate patches and update mirror
-function _generate(mirror, obj, patches, path, invertible) {
+function _generate(mirror, obj, patches, path, invertible, idFieldNames) {
+    if (idFieldNames === void 0) { idFieldNames = ['_id']; }
     if (obj === mirror) {
         return;
     }
     if (typeof obj.toJSON === "function") {
         obj = obj.toJSON();
     }
-    var newKeys = helpers_js_1._objectKeys(obj);
-    var oldKeys = helpers_js_1._objectKeys(mirror);
+    var newKeys = helpers_js_1._objectKeys(obj, idFieldNames);
+    var oldKeys = helpers_js_1._objectKeys(mirror, idFieldNames);
     var changed = false;
     var deleted = false;
     //if ever "move" operation is implemented here, make sure this test runs OK: "should not generate the same patch twice (move)"
     for (var t = oldKeys.length - 1; t >= 0; t--) {
         var key = oldKeys[t];
-        var oldVal = core_js_1.getValue(mirror, key, mirror);
-        var newVal = core_js_1.getValue(obj, key, obj);
+        var oldVal = helpers_js_1.getValue(mirror, key, mirror);
+        var newVal = helpers_js_1.getValue(obj, key, obj);
         if (helpers_js_1.hasOwnProperty(obj, key) && !(newVal === undefined && oldVal !== undefined && Array.isArray(obj) === false)) {
             if (typeof oldVal == "object" && oldVal != null && typeof newVal == "object" && newVal != null && Array.isArray(oldVal) === Array.isArray(newVal)) {
-                _generate(oldVal, newVal, patches, path + "/" + helpers_js_1.escapePathComponent(key), invertible);
+                _generate(oldVal, newVal, patches, path + "/" + helpers_js_1.escapePathComponent(key), invertible, idFieldNames);
             }
             else {
                 if (oldVal !== newVal) {
@@ -970,7 +985,7 @@ function _generate(mirror, obj, patches, path, invertible) {
     }
     for (var t = 0; t < newKeys.length; t++) {
         var key = newKeys[t];
-        var newValue = core_js_1.getValue(obj, key, obj);
+        var newValue = helpers_js_1.getValue(obj, key, obj);
         if (!helpers_js_1.hasOwnProperty(mirror, key) && newValue !== undefined) {
             if (Array.isArray(obj)) {
                 patches.push({ op: "add", path: path + "/-", value: helpers_js_1._deepClone(newValue) });
@@ -984,10 +999,11 @@ function _generate(mirror, obj, patches, path, invertible) {
 /**
  * Create an array of patches from the differences in two objects
  */
-function compare(tree1, tree2, invertible) {
+function compare(tree1, tree2, invertible, idFieldNames) {
     if (invertible === void 0) { invertible = false; }
+    if (idFieldNames === void 0) { idFieldNames = ['_id']; }
     var patches = [];
-    _generate(tree1, tree2, patches, '', invertible);
+    _generate(tree1, tree2, patches, '', invertible, idFieldNames);
     return patches;
 }
 exports.compare = compare;

@@ -4,6 +4,18 @@
  * MIT license
  */
 
+export function getValue(obj: any, key: any, document: any = undefined): any {
+    if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
+        // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
+        var parts = key.split(':');
+        var keyName = parts[0];
+        var keyValue = parts[1];
+        var index = obj.findIndex(el => (keyName == null || keyName.length == 0) ? el == keyValue : el[keyName] == keyValue);
+        return index === -1 ? undefined : obj[index];
+    }
+    return obj[key];
+}
+
 const _hasOwnProperty = Object.prototype.hasOwnProperty;
 export function hasOwnProperty(obj, key) {
     if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
@@ -16,7 +28,7 @@ export function hasOwnProperty(obj, key) {
     }
     return _hasOwnProperty.call(obj, key);
 }
-export function _objectKeys(obj) {
+export function _objectKeys(obj, idFieldNames  = ['_id']) {
     if (obj == null) {
         return [];
     }
@@ -26,8 +38,9 @@ export function _objectKeys(obj) {
             var key = "" + k;
             var el = obj[key];
             if (!!el) {
-                if (el._id != null && el._id.length > 0) {
-                    keys[k] = '_id:' + el._id;
+                const idFN = idFieldNames.find(idField => !!el[idField]);
+                if (idFN) {
+                    keys[k] = idFN + ':' + el[idFN];
                 } else if (typeof el === 'string' || typeof el === 'bigint' || typeof el === 'boolean' || typeof el === 'number') {
                     keys[k] = ':' + el;
                 } else {
@@ -147,7 +160,8 @@ export function hasUndefined(obj: any): boolean {
             var objKeys = _objectKeys(obj);
             var objKeysLength = objKeys.length;
             for (var i = 0; i < objKeysLength; i++) {
-                if (hasUndefined(obj[objKeys[i]])) {
+                const value = getValue(obj, objKeys[i]);
+                if (hasUndefined(value)) {
                     return true;
                 }
             }

@@ -1958,7 +1958,7 @@ describe('undefined - JS to JSON projection / JSON to JS extension', function() 
   });
 });
 
-describe('compare - index array by (id:value | :value), ', function() {
+describe('compare - index array by (_id:value | :value), ', function() {
   it('add element to array', function() {
     const obj = {
       hello: 'world',
@@ -2066,6 +2066,82 @@ describe('compare - index array by (id:value | :value), ', function() {
     };
     const patches = jsonpatch.compare(obj, obj2);
     expect(patches).toEqual([{ op: 'replace', path: '/roles/_id:1b/n', value: 'bb'}]);
+
+    jsonpatch.applyPatch(obj, patches, true, true);
+    expect(obj).toEqual(obj2);
+  });
+});
+
+describe('compare - index array by (otherId:value | :value), ', function() {
+  // const idFieldNames = ['otherId', '_id'];
+  const idFieldNames = ['_id', 'otherId'];
+
+  it('add object element to array', function() {
+    const obj = {
+      hello: 'world',
+      roles: [{ otherId: '1a', n: 'a'}, { otherId: '1b', n: 'b'}]
+    };
+    let obj2 = {
+      hello: 'world',
+      roles: [{ otherId: '1a', n: 'a'}, { otherId: '1b', n: 'b'}, { otherId: '1c', n: 'c'}]
+    };
+    const patches = jsonpatch.compare(obj, obj2);
+    expect(patches).toEqual([{ op: 'add', path: '/roles/-', value: { otherId: '1c', n: 'c'}}]);
+
+    jsonpatch.applyPatch(obj, patches, true, true);
+    expect(obj).toEqual(obj2);
+  });
+
+  it('add duplicate object element to array', function() {
+    const obj = {
+      hello: 'world',
+      roles: [{ otherId: '1a', n: 'a'}, { otherId: '1b', n: 'b'}]
+    };
+    const obj2 = jsonpatch.applyPatch(obj, [{ op: 'add', path: '/roles/-', value: { otherId: '1a', n: 'a'}}], true, false, true, idFieldNames);
+    expect(obj2.newDocument).toEqual(obj);
+  });
+
+  it('remove object element from array', function() {
+    const obj = {
+      hello: 'world',
+      roles: [{ otherId: '1a', n: 'a'}, { otherId: '1b', n: 'b'}, { otherId: '1c', n: 'c'}]
+    };
+    let obj2 = {
+      hello: 'world',
+      roles: [{ otherId: '1a', n: 'a'}, { otherId: '1c', n: 'c'}]
+    };
+    const patches = jsonpatch.compare(obj, obj2, false, idFieldNames);
+    expect(patches).toEqual([{ op: 'remove', path: '/roles/otherId:1b'}]);
+
+    jsonpatch.applyPatch(obj, patches, true, true);
+    expect(obj).toEqual(obj2);
+  });
+
+  it('replace object element from array', function() {
+    const obj = {
+      hello: 'world',
+      roles: [{ otherId: '1a', n: 'a'}, { otherId: '1b', n: 'b'}, { otherId: '1c', n: 'c'}]
+    };
+    const obj2 = {
+      hello: 'world',
+      roles: [{ otherId: '1a', n: 'a'}, { otherId: '1d', n: 'd'}, { otherId: '1c', n: 'c'}]
+    };
+    const patches = [{ op: 'replace', path: '/roles/otherId:1b', value: { otherId: '1d', n: 'd'}}]
+    jsonpatch.applyPatch(obj, patches, true, true);
+    expect(obj).toEqual(obj2);
+  });
+
+  it('replace property of object inside from array', function() {
+    const obj = {
+      hello: 'world',
+      roles: [{ otherId: '1a', n: 'a'}, { otherId: '1b', n: 'b'}, { otherId: '1c', n: 'c'}]
+    };
+    const obj2 = {
+      hello: 'world',
+      roles: [{ otherId: '1a', n: 'a'}, { otherId: '1b', n: 'bb'}, { otherId: '1c', n: 'c'}]
+    };
+    const patches = jsonpatch.compare(obj, obj2, false, idFieldNames);
+    expect(patches).toEqual([{ op: 'replace', path: '/roles/otherId:1b/n', value: 'bb'}]);
 
     jsonpatch.applyPatch(obj, patches, true, true);
     expect(obj).toEqual(obj2);

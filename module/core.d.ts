@@ -52,7 +52,6 @@ export interface PatchResult<T> extends Array<OperationResult<T>> {
  * @return The retrieved value
  */
 export declare function getValueByPointer(document: any, pointer: string): any;
-export declare function getValue(obj: any, key: any, document: any): any;
 /**
  * Apply a single JSON Patch Operation on a JSON document.
  * Returns the {newDocument, result} of the operation.
@@ -65,9 +64,10 @@ export declare function getValue(obj: any, key: any, document: any): any;
  * @param validateOperation `false` is without validation, `true` to use default jsonpatch's validation, or you can pass a `validateOperation` callback to be used for validation.
  * @param mutateDocument Whether to mutate the original document or clone it before applying
  * @param banPrototypeModifications Whether to ban modifications to `__proto__`, defaults to `true`.
+ * @param idFieldNames Array with possible names for id-fields, e.g. ['_id', 'id']
  * @return `{newDocument, result}` after the operation
  */
-export declare function applyOperation<T>(document: T, operation: Operation, validateOperation?: boolean | Validator<T>, mutateDocument?: boolean, banPrototypeModifications?: boolean, index?: number): OperationResult<T>;
+export declare function applyOperation<T>(document: T, operation: Operation, validateOperation?: boolean | Validator<T>, mutateDocument?: boolean, banPrototypeModifications?: boolean, index?: number, idFieldNames?: string[]): OperationResult<T>;
 /**
  * Apply a full JSON Patch array on a JSON document.
  * Returns the {newDocument, result} of the patch.
@@ -80,9 +80,10 @@ export declare function applyOperation<T>(document: T, operation: Operation, val
  * @param validateOperation `false` is without validation, `true` to use default jsonpatch's validation, or you can pass a `validateOperation` callback to be used for validation.
  * @param mutateDocument Whether to mutate the original document or clone it before applying
  * @param banPrototypeModifications Whether to ban modifications to `__proto__`, defaults to `true`.
+ * @param idFieldNames Array with possible names for id-fields, e.g. ['_id', 'id']
  * @return An array of `{newDocument, result}` after the patch
  */
-export declare function applyPatch<T>(document: T, patch: ReadonlyArray<Operation>, validateOperation?: boolean | Validator<T>, mutateDocument?: boolean, banPrototypeModifications?: boolean): PatchResult<T>;
+export declare function applyPatch<T>(document: T, patch: ReadonlyArray<Operation>, validateOperation?: boolean | Validator<T>, mutateDocument?: boolean, banPrototypeModifications?: boolean, idFieldNames?: string[]): PatchResult<T>;
 /**
  * Apply a single JSON Patch Operation on a JSON document.
  * Returns the updated document.

@@ -40,7 +40,8 @@ exports.unobserve = unobserve;
 /**
  * Observes changes made to an object, which can then be retrieved using generate
  */
-function observe(obj, callback) {
+function observe(obj, callback, idFieldNames) {
+    if (idFieldNames === void 0) { idFieldNames = ['_id']; }
     var patches = [];
     var observer;
     var mirror = getMirror(obj);
@@ -61,7 +62,7 @@ function observe(obj, callback) {
         observer.callback = callback;
         observer.next = null;
         var dirtyCheck = function () {
-            generate(observer);
+            generate(observer, false, idFieldNames);
         };
         var fastCheck = function () {
             clearTimeout(observer.next);
@@ -78,7 +79,7 @@ function observe(obj, callback) {
     observer.patches = patches;
     observer.object = obj;
     observer.unobserve = function () {
-        generate(observer);
+        generate(observer, false, idFieldNames);
         clearTimeout(observer.next);
         removeObserverFromMirror(mirror, observer);
         if (typeof window !== 'undefined') {
@@ -96,10 +97,11 @@ exports.observe = observe;
 /**
  * Generate an array of patches from an observer
  */
-function generate(observer, invertible) {
+function generate(observer, invertible, idFieldNames) {
     if (invertible === void 0) { invertible = false; }
+    if (idFieldNames === void 0) { idFieldNames = ['_id']; }
     var mirror = beforeDict.get(observer.object);
-    _generate(mirror.value, observer.object, observer.patches, "", invertible);
+    _generate(mirror.value, observer.object, observer.patches, "", invertible, idFieldNames);
     if (observer.patches.length) {
         core_js_1.applyPatch(mirror.value, observer.patches);
     }
@@ -114,25 +116,26 @@ function generate(observer, invertible) {
 }
 exports.generate = generate;
 // Dirty check if obj is different from mirror, generate patches and update mirror
-function _generate(mirror, obj, patches, path, invertible) {
+function _generate(mirror, obj, patches, path, invertible, idFieldNames) {
+    if (idFieldNames === void 0) { idFieldNames = ['_id']; }
     if (obj === mirror) {
         return;
     }
     if (typeof obj.toJSON === "function") {
         obj = obj.toJSON();
     }
-    var newKeys = helpers_js_1._objectKeys(obj);
-    var oldKeys = helpers_js_1._objectKeys(mirror);
+    var newKeys = helpers_js_1._objectKeys(obj, idFieldNames);
+    var oldKeys = helpers_js_1._objectKeys(mirror, idFieldNames);
     var changed = false;
     var deleted = false;
     //if ever "move" operation is implemented here, make sure this test runs OK: "should not generate the same patch twice (move)"
     for (var t = oldKeys.length - 1; t >= 0; t--) {
         var key = oldKeys[t];
-        var oldVal = core_js_1.getValue(mirror, key, mirror);
-        var newVal = core_js_1.getValue(obj, key, obj);
+        var oldVal = helpers_js_1.getValue(mirror, key, mirror);
+        var newVal = helpers_js_1.getValue(obj, key, obj);
         if (helpers_js_1.hasOwnProperty(obj, key) && !(newVal === undefined && oldVal !== undefined && Array.isArray(obj) === false)) {
             if (typeof oldVal == "object" && oldVal != null && typeof newVal == "object" && newVal != null && Array.isArray(oldVal) === Array.isArray(newVal)) {
-                _generate(oldVal, newVal, patches, path + "/" + helpers_js_1.escapePathComponent(key), invertible);
+                _generate(oldVal, newVal, patches, path + "/" + helpers_js_1.escapePathComponent(key), invertible, idFieldNames);
             }
             else {
                 if (oldVal !== newVal) {
@@ -164,7 +167,7 @@ function _generate(mirror, obj, patches, path, invertible) {
     }
     for (var t = 0; t < newKeys.length; t++) {
         var key = newKeys[t];
-        var newValue = core_js_1.getValue(obj, key, obj);
+        var newValue = helpers_js_1.getValue(obj, key, obj);
         if (!helpers_js_1.hasOwnProperty(mirror, key) && newValue !== undefined) {
             if (Array.isArray(obj)) {
                 patches.push({ op: "add", path: path + "/-", value: helpers_js_1._deepClone(newValue) });
@@ -178,10 +181,11 @@ function _generate(mirror, obj, patches, path, invertible) {
 /**
  * Create an array of patches from the differences in two objects
  */
-function compare(tree1, tree2, invertible) {
+function compare(tree1, tree2, invertible, idFieldNames) {
     if (invertible === void 0) { invertible = false; }
+    if (idFieldNames === void 0) { idFieldNames = ['_id']; }
     var patches = [];
-    _generate(tree1, tree2, patches, '', invertible);
+    _generate(tree1, tree2, patches, '', invertible, idFieldNames);
     return patches;
 }
 exports.compare = compare;

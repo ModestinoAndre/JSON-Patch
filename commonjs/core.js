@@ -52,16 +52,18 @@ var objOps = {
 };
 /* The operations applicable to an array. Many are the same as for the object */
 var arrOps = {
-    add: function (arr, i, document) {
+    add: function (arr, i, document, idFieldNames) {
         var _this = this;
+        if (idFieldNames === void 0) { idFieldNames = ['_id']; }
         if (typeof this.value === 'string' || typeof this.value === 'bigint' || typeof this.value === 'boolean' || typeof this.value === 'number') {
             var idx = arr.findIndex(function (el) { return el === _this.value; });
             if (idx !== -1) {
                 return { newDocument: document, index: i };
             }
         }
-        if (!!this.value._id && this.value._id.length > 0) {
-            var idx = arr.findIndex(function (el) { return !!el && el._id === _this.value._id; });
+        var idFN = idFieldNames.find(function (idField) { return !!_this.value[idField]; });
+        if (idFN) {
+            var idx = arr.findIndex(function (el) { return !!el && el[idFN] === _this.value[idFN]; });
             if (idx !== -1) {
                 return { newDocument: document, index: i };
             }
@@ -76,10 +78,12 @@ var arrOps = {
         return { newDocument: document, index: i };
     },
     remove: function (arr, i, document) {
+        // TODO: check for idFieldNames
         var removedList = arr.splice(i, 1);
         return { newDocument: document, removed: removedList[0] };
     },
     replace: function (arr, i, document) {
+        // TODO: check for idFieldNames
         var removed = arr[i];
         arr[i] = this.value;
         return { newDocument: document, removed: removed };
@@ -106,18 +110,6 @@ function getValueByPointer(document, pointer) {
     return getOriginalDestination.value;
 }
 exports.getValueByPointer = getValueByPointer;
-function getValue(obj, key, document) {
-    if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
-        // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
-        var parts = key.split(':');
-        var keyName = parts[0];
-        var keyValue = parts[1];
-        var index = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : el[keyName] == keyValue; });
-        return index === -1 ? undefined : obj[index];
-    }
-    return obj[key];
-}
-exports.getValue = getValue;
 /**
  * Apply a single JSON Patch Operation on a JSON document.
  * Returns the {newDocument, result} of the operation.
@@ -130,13 +122,15 @@ exports.getValue = getValue;
  * @param validateOperation `false` is without validation, `true` to use default jsonpatch's validation, or you can pass a `validateOperation` callback to be used for validation.
  * @param mutateDocument Whether to mutate the original document or clone it before applying
  * @param banPrototypeModifications Whether to ban modifications to `__proto__`, defaults to `true`.
+ * @param idFieldNames Array with possible names for id-fields, e.g. ['_id', 'id']
  * @return `{newDocument, result}` after the operation
  */
-function applyOperation(document, operation, validateOperation, mutateDocument, banPrototypeModifications, index) {
+function applyOperation(document, operation, validateOperation, mutateDocument, banPrototypeModifications, index, idFieldNames) {
     if (validateOperation === void 0) { validateOperation = false; }
     if (mutateDocument === void 0) { mutateDocument = true; }
     if (banPrototypeModifications === void 0) { banPrototypeModifications = true; }
     if (index === void 0) { index = 0; }
+    if (idFieldNames === void 0) { idFieldNames = ['_id']; }
     if (validateOperation) {
         if (typeof validateOperation == 'function') {
             validateOperation(operation, 0, document, operation.path);
@@ -220,7 +214,7 @@ function applyOperation(document, operation, validateOperation, mutateDocument, 
             }
             if (validateOperation) {
                 if (existingPathFragment === undefined) {
-                    if (getValue(obj, key, document) === undefined) {
+                    if (helpers_js_1.getValue(obj, key, document) === undefined) {
                         existingPathFragment = keys.slice(0, t).join('/');
                     }
                     else if (t == len - 1) {
@@ -259,7 +253,7 @@ function applyOperation(document, operation, validateOperation, mutateDocument, 
                     if (validateOperation && operation.op === "add" && key > obj.length) {
                         throw new exports.JsonPatchError("The specified index MUST NOT be greater than the number of elements in the array", "OPERATION_VALUE_OUT_OF_BOUNDS", index, operation, document);
                     }
-                    var returnValue = arrOps[operation.op].call(operation, obj, key, document); // Apply patch
+                    var returnValue = arrOps[operation.op].call(operation, obj, key, document, idFieldNames); // Apply patch
                     if (returnValue.test === false) {
                         throw new exports.JsonPatchError("Test operation failed", 'TEST_OPERATION_FAILED', index, operation, document);
                     }
@@ -297,11 +291,13 @@ exports.applyOperation = applyOperation;
  * @param validateOperation `false` is without validation, `true` to use default jsonpatch's validation, or you can pass a `validateOperation` callback to be used for validation.
  * @param mutateDocument Whether to mutate the original document or clone it before applying
  * @param banPrototypeModifications Whether to ban modifications to `__proto__`, defaults to `true`.
+ * @param idFieldNames Array with possible names for id-fields, e.g. ['_id', 'id']
  * @return An array of `{newDocument, result}` after the patch
  */
-function applyPatch(document, patch, validateOperation, mutateDocument, banPrototypeModifications) {
+function applyPatch(document, patch, validateOperation, mutateDocument, banPrototypeModifications, idFieldNames) {
     if (mutateDocument === void 0) { mutateDocument = true; }
     if (banPrototypeModifications === void 0) { banPrototypeModifications = true; }
+    if (idFieldNames === void 0) { idFieldNames = ['_id']; }
     if (validateOperation) {
         if (!Array.isArray(patch)) {
             throw new exports.JsonPatchError('Patch sequence must be an array', 'SEQUENCE_NOT_AN_ARRAY');
@@ -313,7 +309,7 @@ function applyPatch(document, patch, validateOperation, mutateDocument, banProto
     var results = new Array(patch.length);
     for (var i = 0, length_1 = patch.length; i < length_1; i++) {
         // we don't need to pass mutateDocument argument because if it was true, we already deep cloned the object, we'll just pass `true`
-        results[i] = applyOperation(document, patch[i], validateOperation, true, banPrototypeModifications, i);
+        results[i] = applyOperation(document, patch[i], validateOperation, true, banPrototypeModifications, i, idFieldNames);
         document = results[i].newDocument; // in case root was replaced
     }
     results.newDocument = document;

@@ -3,8 +3,9 @@
  * (c) 2017 Joachim Wester
  * MIT license
  */
+export declare function getValue(obj: any, key: any, document?: any): any;
 export declare function hasOwnProperty(obj: any, key: any): any;
-export declare function _objectKeys(obj: any): any[];
+export declare function _objectKeys(obj: any, idFieldNames?: string[]): any[];
 /**
 * Deeply clone the object.
 * https://jsperf.com/deep-copy-vs-json-stringify-json-parse/25 (recursiveDeepCopy)

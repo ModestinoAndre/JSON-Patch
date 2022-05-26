@@ -3,8 +3,8 @@
  * (c) 2017-2021 Joachim Wester
  * MIT license
  */
-import { _deepClone, _objectKeys, escapePathComponent, hasOwnProperty } from './helpers.js';
-import { applyPatch, getValue, Operation } from './core.js';
+import { _deepClone, getValue, _objectKeys, escapePathComponent, hasOwnProperty } from './helpers.js';
+import { applyPatch, Operation } from './core.js';
 
 export interface Observer<T> {
   object: T;
@@ -57,7 +57,7 @@ export function unobserve<T>(root: T, observer: Observer<T>) {
 /**
  * Observes changes made to an object, which can then be retrieved using generate
  */
-export function observe<T>(obj: Object|Array<T>, callback?: (patches: Operation[]) => void): Observer<T> {
+export function observe<T>(obj: Object|Array<T>, callback?: (patches: Operation[]) => void, idFieldNames  = ['_id']): Observer<T> {
   var patches = [];
   var observer;
   var mirror = getMirror(obj);
@@ -83,7 +83,7 @@ export function observe<T>(obj: Object|Array<T>, callback?: (patches: Operation[
     observer.next = null;
 
     var dirtyCheck = () => {
-      generate(observer);
+      generate(observer, false, idFieldNames);
     };
     var fastCheck = () => {
       clearTimeout(observer.next);
@@ -101,7 +101,7 @@ export function observe<T>(obj: Object|Array<T>, callback?: (patches: Operation[
   observer.object = obj;
 
   observer.unobserve = () => {
-    generate(observer);
+    generate(observer, false, idFieldNames);
     clearTimeout(observer.next);
     removeObserverFromMirror(mirror, observer);
 
@@ -122,10 +122,10 @@ export function observe<T>(obj: Object|Array<T>, callback?: (patches: Operation[
 /**
  * Generate an array of patches from an observer
  */
-export function generate<T>(observer: Observer<Object>, invertible = false): Operation[] {
+export function generate<T>(observer: Observer<Object>, invertible = false, idFieldNames  = ['_id']): Operation[] {
   var mirror = beforeDict.get(observer.object);
 
-  _generate(mirror.value, observer.object, observer.patches, "", invertible);
+  _generate(mirror.value, observer.object, observer.patches, "", invertible, idFieldNames);
   if (observer.patches.length) {
     applyPatch(mirror.value, observer.patches);
   }
@@ -140,7 +140,7 @@ export function generate<T>(observer: Observer<Object>, invertible = false): Ope
 }
 
 // Dirty check if obj is different from mirror, generate patches and update mirror
-function _generate(mirror, obj, patches, path, invertible) {
+function _generate(mirror, obj, patches, path, invertible, idFieldNames  = ['_id']) {
   if (obj === mirror) {
     return;
   }
@@ -149,8 +149,8 @@ function _generate(mirror, obj, patches, path, invertible) {
     obj = obj.toJSON();
   }
 
-  var newKeys = _objectKeys(obj);
-  var oldKeys = _objectKeys(mirror);
+  var newKeys = _objectKeys(obj, idFieldNames);
+  var oldKeys = _objectKeys(mirror, idFieldNames);
   var changed = false;
   var deleted = false;
 
@@ -162,7 +162,7 @@ function _generate(mirror, obj, patches, path, invertible) {
     var newVal = getValue(obj, key, obj);
     if (hasOwnProperty(obj, key) && !(newVal === undefined && oldVal !== undefined && Array.isArray(obj) === false)) {
       if (typeof oldVal == "object" && oldVal != null && typeof newVal == "object" && newVal != null && Array.isArray(oldVal) === Array.isArray(newVal)) {
-        _generate(oldVal, newVal, patches, path + "/" + escapePathComponent(key), invertible);
+        _generate(oldVal, newVal, patches, path + "/" + escapePathComponent(key), invertible, idFieldNames);
       }
       else {
         if (oldVal !== newVal) {
@@ -208,8 +208,8 @@ function _generate(mirror, obj, patches, path, invertible) {
 /**
  * Create an array of patches from the differences in two objects
  */
-export function compare(tree1: Object | Array<any>, tree2: Object | Array<any>, invertible = false): Operation[] {
+export function compare(tree1: Object | Array<any>, tree2: Object | Array<any>, invertible = false, idFieldNames  = ['_id']): Operation[] {
   var patches = [];
-  _generate(tree1, tree2, patches, '', invertible);
+  _generate(tree1, tree2, patches, '', invertible, idFieldNames);
   return patches;
 }
