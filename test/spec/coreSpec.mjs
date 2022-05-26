@@ -2069,6 +2069,32 @@ describe('compare - index array by (_id:value | :value), ', function() {
 
     jsonpatch.applyPatch(obj, patches, true, true);
     expect(obj).toEqual(obj2);
+  })
+
+  it('order does not matter', function() {
+    const obj = {
+      hello: 'world',
+      roles: [{ _id: '1a', n: 'a'}, { _id: '1b', n: 'b'}, { _id: '1c', n: 'c'}]
+    };
+    const obj2 = {
+      hello: 'world',
+      roles: [{ _id: '1b', n: 'b'}, { _id: '1a', n: 'a'}, { _id: '1c', n: 'c'}]
+    };
+    const patches = jsonpatch.compare(obj, obj2);
+    expect(patches).toEqual([]);
+  });
+
+  it('works with numeric _id', function() {
+    const obj = {
+      hello: 'world',
+      roles: [{ _id: 1, n: 'a'}, { _id: 2, n: 'b'}, { _id: 3, n: 'c'}]
+    };
+    const obj2 = {
+      hello: 'world',
+      roles: [{ _id: 2, n: 'b'}, { _id: 1, n: 'a'}, { _id: 3, n: 'c'}]
+    };
+    const patches = jsonpatch.compare(obj, obj2);
+    expect(patches).toEqual([]);
   });
 });
 
