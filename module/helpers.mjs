@@ -16,6 +16,58 @@ var __extends = (this && this.__extends) || (function () {
         d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
     };
 })();
+/**
+ * Efetua teste de identidade e de igualdade (equals) de forma bilateral. <br>
+ * Nem sempre id1.equals(id2) será igual a id2.equals(id1) <br>
+ * ex.: '123'.equals(Bson.ObjectId('123')) => false <br>
+ * ex.: Bson.ObjectId('123').equals('123') => true <br>
+ * isEquals() resolve essa questão.
+ */
+export function isEquals(id1, id2) {
+    if (id1 == id2) {
+        return true;
+    }
+    if (id1 == null || id2 == null) {
+        return false;
+    }
+    if (typeof id1 === 'object' && 'equals' in id1) {
+        if (id1.equals(id2)) {
+            return true;
+        }
+    }
+    if (typeof id2 === 'object' && 'equals' in id2) {
+        if (id2.equals(id1)) {
+            return true;
+        }
+    }
+    return false;
+}
+export function hasSamePropertyValue(obj1, obj2, propertyName) {
+    if (obj1 == null || obj2 == null || !propertyName) {
+        return false;
+    }
+    var id1 = obj1[propertyName];
+    var id2 = obj2[propertyName];
+    return isEquals(id1, id2);
+}
+export function toString(value) {
+    if (value == null) {
+        return undefined;
+    }
+    var type = typeof value;
+    if (type === 'string') {
+        return value;
+    }
+    if (type === 'number' || type === 'boolean' || type === 'bigint') {
+        return String(value);
+    }
+    if (type === 'object') {
+        if ('toString' in value) {
+            return value.toString();
+        }
+    }
+    return String(value);
+}
 export function getValue(obj, key, document) {
     if (document === void 0) { document = undefined; }
     if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
@@ -23,7 +75,7 @@ export function getValue(obj, key, document) {
         var parts = key.split(':');
         var keyName = parts[0];
         var keyValue = parts[1];
-        var index = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : el[keyName] == keyValue; });
+        var index = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : isEquals(el[keyName], keyValue); });
         return index === -1 ? undefined : obj[index];
     }
     return obj[key];
@@ -35,7 +87,7 @@ export function hasOwnProperty(obj, key) {
         var parts = key.split(':');
         var keyName = parts[0];
         var keyValue = parts[1];
-        var index = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : el[keyName] == keyValue; });
+        var index = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : isEquals(el[keyName], keyValue); });
         return index !== -1;
     }
     return _hasOwnProperty.call(obj, key);
@@ -50,10 +102,10 @@ export function _objectKeys(obj, idFieldNames) {
         for (var k = 0; k < keys.length; k++) {
             var key = "" + k;
             var el = obj[key];
-            if (!!el) {
+            if (el != null) {
                 var idFN = idFieldNames.find(function (idField) { return !!el[idField]; });
                 if (idFN) {
-                    keys[k] = idFN + ':' + el[idFN];
+                    keys[k] = idFN + ':' + toString(el[idFN]);
                 }
                 else if (typeof el === 'string' || typeof el === 'bigint' || typeof el === 'boolean' || typeof el === 'number') {
                     keys[k] = ':' + el;

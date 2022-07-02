@@ -3,7 +3,7 @@
  * (c) 2017-2021 Joachim Wester
  * MIT license
  */
-import { _deepClone, getValue, _objectKeys, escapePathComponent, hasOwnProperty } from './helpers.js';
+import { isEquals, _deepClone, getValue, _objectKeys, escapePathComponent, hasOwnProperty } from './helpers.js';
 import { applyPatch, Operation } from './core.js';
 
 export interface Observer<T> {
@@ -165,7 +165,7 @@ function _generate(mirror, obj, patches, path, invertible, idFieldNames  = ['_id
         _generate(oldVal, newVal, patches, path + "/" + escapePathComponent(key), invertible, idFieldNames);
       }
       else {
-        if (oldVal !== newVal) {
+        if (!isEquals(oldVal, newVal)) {
           changed = true;
           if (invertible) {
             patches.push({ op: "test", path: path + "/" + escapePathComponent(key), value: _deepClone(oldVal) });

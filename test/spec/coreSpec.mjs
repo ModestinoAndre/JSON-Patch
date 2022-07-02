@@ -2099,8 +2099,33 @@ describe('compare - index array by (_id:value | :value), ', function() {
 });
 
 describe('compare - index array by (otherId:value | :value), ', function() {
+  class ObjectId {
+    getValue;
+    constructor(_abc) {
+      this.getValue = () => _abc;
+    }
+
+    equals(other) {
+      return other === this.getValue() || (other instanceof this.constructor && other.getValue() === this.getValue());
+    }
+
+    toString() {
+      return this.getValue();
+    }
+  }
+
   // const idFieldNames = ['otherId', '_id'];
   const idFieldNames = ['_id', 'otherId'];
+
+  it('ObjectId works', function() {
+    let a = new ObjectId('123');
+    let a2 = new ObjectId('123');
+    let b = new ObjectId('000');
+    expect(a.equals('123')).toBeTruthy();
+    expect(a.equals(a2)).toBeTruthy();
+    expect(a.equals(b)).toBeFalsy();
+    expect(a.equals('000')).toBeFalsy();
+  });
 
   it('add object element to array', function() {
     const obj = {
@@ -2198,4 +2223,52 @@ describe('compare - index array by (otherId:value | :value), ', function() {
     const patches = jsonpatch.compare(obj, obj2, false, idFieldNames);
     expect(patches).toEqual([]);
   });
+
+  it('works with ObjectId: compare', function() {
+    const obj = {
+      hello: 'world',
+      roles: [{ _id: '1', n: 'a'}, { _id: '2', n: 'b'}, { _id: '3', n: 'c'}]
+    };
+    const obj2 = {
+      hello: 'world',
+      roles: [{ _id: new ObjectId('2'), n: 'b'}, { _id: '1', n: 'a'}, { _id: '3', n: 'c'}]
+    };
+    const patches = jsonpatch.compare(obj, obj2, false);
+    expect(patches).toEqual([]);
+  });
+
+  it('works with ObjectId: replace inside object', function() {
+    const obj = {
+      hello: 'world',
+      roles: [{ _id: '1', n: 'a'}, { _id: '2', n: 'b'}, { _id: '3', n: 'c'}]
+    };
+    const obj2 = {
+      hello: 'world',
+      roles: [{ _id: new ObjectId('2'), n: 'bb'}, { _id: '1', n: 'a'}, { _id: '3', n: 'c'}]
+    };
+    const patches = jsonpatch.compare(obj, obj2, false);
+    expect(patches).toEqual([{ op: 'replace', path: '/roles/_id:2/n', value: 'bb'}]);
+  });
+
+  it('works with ObjectId: replace inside object', function() {
+    const obj2 = {
+      hello: 'world',
+      roles: [{ _id: new ObjectId('2'), n: 'b'}, { _id: '1', n: 'a'}, { _id: '3', n: 'c'}]
+    };
+    expect(obj2.roles[0].n).toBe('b');
+    jsonpatch.applyPatch(obj2, [{ op: 'replace', path: '/roles/_id:2/n', value: 'bb'}], false, true);
+    expect(obj2.roles[0].n).toBe('bb');
+  });
+
+  it('works with ObjectId: remove inside object', function() {
+    const obj2 = {
+      hello: 'world',
+      roles: [{ _id: new ObjectId('2'), n: 'b'}, { _id: '1', n: 'a'}, { _id: '3', n: 'c'}]
+    };
+    jsonpatch.applyPatch(obj2, [{ op: 'remove', path: '/roles/_id:2'}], false, true);
+    expect(obj2.roles.length).toBe(2);
+    expect(obj2.roles[0].n).toBe('a');
+    expect(obj2.roles[1].n).toBe('c');
+  });
+
 });

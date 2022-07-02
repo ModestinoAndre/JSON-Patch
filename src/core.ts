@@ -5,7 +5,15 @@
  */
 declare var require: any;
 
-import { PatchError, _deepClone, isInteger, unescapePathComponent, hasUndefined, getValue } from './helpers.js';
+import {
+  PatchError,
+  _deepClone,
+  isInteger,
+  unescapePathComponent,
+  hasUndefined,
+  getValue,
+  hasSamePropertyValue, isEquals
+} from './helpers.js';
 
 export const JsonPatchError = PatchError;
 export const deepClone = _deepClone;
@@ -127,14 +135,14 @@ const objOps = {
 var arrOps = {
   add: function (arr, i, document, idFieldNames  = ['_id']) {
     if (typeof this.value === 'string' || typeof this.value === 'bigint' || typeof this.value === 'boolean' || typeof this.value === 'number') {
-      var idx = arr.findIndex(el => el === this.value);
+      const idx = arr.findIndex(el => el === this.value);
       if (idx !== -1) {
         return { newDocument: document, index: i }
       }
     }
-    const idFN = idFieldNames.find(idField => !!this.value[idField]);
+    const idFN = idFieldNames.find(idField => this.value[idField] != null);
     if (idFN) {
-      var idx = arr.findIndex(el => !!el && el[idFN] === this.value[idFN]);
+      const idx = arr.findIndex(el => hasSamePropertyValue(el, this.value, idFN));
       if (idx !== -1) {
         return { newDocument: document, index: i }
       }
@@ -311,7 +319,7 @@ export function applyOperation<T>(document: T,
             var parts = key.split(':');
             var keyName = parts[0];
             var keyValue = parts[1];
-            key = obj.findIndex(el => (keyName == null || keyName.length == 0) ? el == keyValue : el[keyName] == keyValue);
+            key = obj.findIndex(el => (keyName == null || keyName.length == 0) ? el == keyValue : isEquals(el[keyName], keyValue));
             if (validateOperation && key === -1) {
               throw new JsonPatchError('Cannot perform the operation at a path that does not exist', 'OPERATION_PATH_UNRESOLVABLE', index, operation, document);
             }

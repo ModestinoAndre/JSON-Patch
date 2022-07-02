@@ -138,7 +138,7 @@ function _generate(mirror, obj, patches, path, invertible, idFieldNames) {
                 _generate(oldVal, newVal, patches, path + "/" + helpers_js_1.escapePathComponent(key), invertible, idFieldNames);
             }
             else {
-                if (oldVal !== newVal) {
+                if (!helpers_js_1.isEquals(oldVal, newVal)) {
                     changed = true;
                     if (invertible) {
                         patches.push({ op: "test", path: path + "/" + helpers_js_1.escapePathComponent(key), value: helpers_js_1._deepClone(oldVal) });

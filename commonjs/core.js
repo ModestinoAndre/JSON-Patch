@@ -61,9 +61,9 @@ var arrOps = {
                 return { newDocument: document, index: i };
             }
         }
-        var idFN = idFieldNames.find(function (idField) { return !!_this.value[idField]; });
+        var idFN = idFieldNames.find(function (idField) { return _this.value[idField] != null; });
         if (idFN) {
-            var idx = arr.findIndex(function (el) { return !!el && el[idFN] === _this.value[idFN]; });
+            var idx = arr.findIndex(function (el) { return helpers_js_1.hasSamePropertyValue(el, _this.value, idFN); });
             if (idx !== -1) {
                 return { newDocument: document, index: i };
             }
@@ -243,7 +243,7 @@ function applyOperation(document, operation, validateOperation, mutateDocument, 
                         var parts = key.split(':');
                         var keyName = parts[0];
                         var keyValue = parts[1];
-                        key = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : el[keyName] == keyValue; });
+                        key = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : helpers_js_1.isEquals(el[keyName], keyValue); });
                         if (validateOperation && key === -1) {
                             throw new exports.JsonPatchError('Cannot perform the operation at a path that does not exist', 'OPERATION_PATH_UNRESOLVABLE', index, operation, document);
                         }
