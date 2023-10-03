@@ -2077,4 +2077,68 @@ describe('duplex', function() {
     two.both = Object.create(null);
     expect(() => jsonpatch.compare(one, two)).not.toThrow();
   });
+
+  it('should not return patch difference between date objects', function() {
+    const obj = {
+      firstName: 'Albert',
+      lastName: 'Einstein',
+      start: new Date(Date.UTC(2023, 1, 2))
+    };
+    const obj2 = {
+      firstName: 'Albert',
+      lastName: 'Einstein',
+      start: new Date(Date.UTC(2023, 1, 2))
+    };
+
+    const patches = jsonpatch.compare(obj, obj2);
+    expect(patches).toReallyEqual([]);
+  });
+
+  it('should not return patch difference between string date representation and date object', function() {
+    const obj = {
+      firstName: 'Albert',
+      lastName: 'Einstein',
+      start: new Date(Date.UTC(2023, 1, 2)).toISOString()
+    };
+    const obj2 = {
+      firstName: 'Albert',
+      lastName: 'Einstein',
+      start: new Date(Date.UTC(2023, 1, 2))
+    };
+
+    const patches = jsonpatch.compare(obj, obj2);
+    expect(patches).toReallyEqual([]);
+  });
+
+  it('should not return patch difference between date object and string date representation', function() {
+    const obj = {
+      firstName: 'Albert',
+      lastName: 'Einstein',
+      start: new Date(Date.UTC(2023, 1, 3))
+    };
+    const obj2 = {
+      firstName: 'Albert',
+      lastName: 'Einstein',
+      start: new Date(Date.UTC(2023, 1, 3)).toISOString()
+    };
+
+    const patches = jsonpatch.compare(obj, obj2);
+    expect(patches).toReallyEqual([]);
+  });
+
+  it('should return patch difference between date objects', function() {
+    const obj = {
+      firstName: 'Albert',
+      lastName: 'Einstein',
+      start: new Date(Date.UTC(2023, 1, 2))
+    };
+    const obj2 = {
+      firstName: 'Albert',
+      lastName: 'Einstein',
+      start: new Date(Date.UTC(2023, 1, 4))
+    };
+
+    const patches = jsonpatch.compare(obj, obj2);
+    expect(patches).toReallyEqual([{ op: 'replace', path: '/start', value: '2023-02-04T00:00:00.000Z' }]);
+  });
 });

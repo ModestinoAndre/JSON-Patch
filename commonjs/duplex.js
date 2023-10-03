@@ -133,6 +133,12 @@ function _generate(mirror, obj, patches, path, invertible, idFieldNames) {
         var key = oldKeys[t];
         var oldVal = helpers_js_1.getValue(mirror, key, mirror);
         var newVal = helpers_js_1.getValue(obj, key, obj);
+        if (oldVal instanceof Date) {
+            oldVal = oldVal.toISOString();
+        }
+        if (newVal instanceof Date) {
+            newVal = newVal.toISOString();
+        }
         if (helpers_js_1.hasOwnProperty(obj, key) && !(newVal === undefined && oldVal !== undefined && Array.isArray(obj) === false)) {
             if (typeof oldVal == "object" && oldVal != null && typeof newVal == "object" && newVal != null && Array.isArray(oldVal) === Array.isArray(newVal)) {
                 _generate(oldVal, newVal, patches, path + "/" + helpers_js_1.escapePathComponent(key), invertible, idFieldNames);

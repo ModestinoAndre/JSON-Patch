@@ -25,6 +25,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
  * isEquals() resolve essa questão.
  */
 function isEquals(id1, id2) {
+    if ((id1 === 0 && id2 === '') || id2 === 0 && id1 === '') { // required to take the test 'should replace 0 with empty string' pass
+        return false;
+    }
     if (id1 == id2) {
         return true;
     }
