@@ -1,7 +1,7 @@
 /*!
  * https://github.com/Starcounter-Jack/JSON-Patch
- * (c) 2017 Joachim Wester
- * MIT license
+ * (c) 2017-2022 Joachim Wester
+ * MIT licensed
  */
 
 /**
@@ -91,10 +91,10 @@ export function _objectKeys(obj, idFieldNames  = ['_id']) {
         return [];
     }
     if (Array.isArray(obj)) {
-        var keys = new Array(obj.length);
-        for (var k = 0; k < keys.length; k++) {
-            var key = "" + k;
-            var el = obj[key];
+        const keys = new Array(obj.length);
+        for (let k = 0; k < keys.length; k++) {
+            let key = "" + k;
+            let el = obj[key];
             if (el != null) {
                 const idFN = idFieldNames.find(idField => !!el[idField]);
                 if (idFN) {
@@ -113,8 +113,8 @@ export function _objectKeys(obj, idFieldNames  = ['_id']) {
     if (Object.keys) {
         return Object.keys(obj);
     }
-    var keys = [];
-    for (var i in obj) {
+    let keys = [];
+    for (let i in obj) {
         if (hasOwnProperty(obj, i)) {
             keys.push(i);
         }
@@ -139,9 +139,9 @@ export function _deepClone(obj) {
 }
 //3x faster than cached /^\d+$/.test(str)
 export function isInteger(str: string): boolean {
-    var i = 0;
-    var len = str.length;
-    var charCode;
+    let i = 0;
+    const len = str.length;
+    let charCode;
     while (i < len) {
         charCode = str.charCodeAt(i);
         if (charCode >= 48 && charCode <= 57) {
@@ -172,8 +172,8 @@ export function unescapePathComponent(path: string): string {
 
 // TODO: modify for _id:id
 export function _getPathRecursive(root: Object, obj: Object): string {
-    var found;
-    for (var key in root) {
+    let found;
+    for (let key in root) {
         if (hasOwnProperty(root, key)) {
             if (root[key] === obj) {
                 return escapePathComponent(key) + '/';
@@ -193,11 +193,11 @@ export function getPath(root: Object, obj: Object): string {
     if (root === obj) {
         return '/';
     }
-    var path = _getPathRecursive(root, obj);
+    const path = _getPathRecursive(root, obj);
     if (path === '') {
         throw new Error("Object not found in root");
     }
-    return '/' + path;
+    return `/${path}`;
 }
 /**
 * Recursively checks whether an object has any undefined values inside.
@@ -208,15 +208,15 @@ export function hasUndefined(obj: any): boolean {
     }
     if (obj) {
         if (Array.isArray(obj)) {
-            for (var i = 0, len = obj.length; i < len; i++) {
+            for (let i = 0, len = obj.length; i < len; i++) {
                 if (hasUndefined(obj[i])) {
                     return true;
                 }
             }
         }
         else if (typeof obj === "object") {
-            var objKeys = _objectKeys(obj);
-            var objKeysLength = objKeys.length;
+            const objKeys = _objectKeys(obj);
+            const objKeysLength = objKeys.length;
             for (var i = 0; i < objKeysLength; i++) {
                 const value = getValue(obj, objKeys[i]);
                 if (hasUndefined(value)) {
@@ -244,9 +244,9 @@ export type JsonPatchErrorName = 'SEQUENCE_NOT_AN_ARRAY' |
 
 function patchErrorMessageFormatter(message: String, args: Object): string {
     const messageParts = [message];
-    for(const key in args) {
+    for (const key in args) {
         const value = typeof args[key] === 'object' ? JSON.stringify(args[key], null, 2) : args[key]; // pretty print
-        if(typeof value !== 'undefined') {
+        if (typeof value !== 'undefined') {
             messageParts.push(`${key}: ${value}`);
         }
     }

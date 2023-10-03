@@ -1,7 +1,7 @@
 /*!
  * https://github.com/Starcounter-Jack/JSON-Patch
- * (c) 2017 Joachim Wester
- * MIT license
+ * (c) 2017-2022 Joachim Wester
+ * MIT licensed
  */
 /**
  * Efetua teste de identidade e de igualdade (equals) de forma bilateral. <br>

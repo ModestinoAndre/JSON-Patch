@@ -1,7 +1,7 @@
 /*!
  * https://github.com/Starcounter-Jack/JSON-Patch
- * (c) 2017 Joachim Wester
- * MIT license
+ * (c) 2017-2022 Joachim Wester
+ * MIT licensed
  */
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -127,7 +127,7 @@ function _objectKeys(obj, idFieldNames) {
                 keys[k] = key;
             }
         }
-        return keys;
+        return keys_1;
     }
     if (Object.keys) {
         return Object.keys(obj);
@@ -222,7 +222,7 @@ function getPath(root, obj) {
     if (path === '') {
         throw new Error("Object not found in root");
     }
-    return '/' + path;
+    return "/" + path;
 }
 exports.getPath = getPath;
 /**
@@ -234,8 +234,8 @@ function hasUndefined(obj) {
     }
     if (obj) {
         if (Array.isArray(obj)) {
-            for (var i = 0, len = obj.length; i < len; i++) {
-                if (hasUndefined(obj[i])) {
+            for (var i_1 = 0, len = obj.length; i_1 < len; i_1++) {
+                if (hasUndefined(obj[i_1])) {
                     return true;
                 }
             }
