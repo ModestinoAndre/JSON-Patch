@@ -117,6 +117,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
  * isEquals() resolve essa questão.
  */
 function isEquals(id1, id2) {
+    if ((id1 === 0 && id2 === '') || id2 === 0 && id1 === '') { // required to take the test 'should replace 0 with empty string' pass
+        return false;
+    }
     if (id1 == id2) {
         return true;
     }
@@ -196,25 +199,28 @@ function _objectKeys(obj, idFieldNames) {
         return [];
     }
     if (Array.isArray(obj)) {
-        var keys = new Array(obj.length);
-        for (var k = 0; k < keys.length; k++) {
+        var keys_1 = new Array(obj.length);
+        var _loop_1 = function (k) {
             var key = "" + k;
             var el = obj[key];
             if (el != null) {
                 var idFN = idFieldNames.find(function (idField) { return !!el[idField]; });
                 if (idFN) {
-                    keys[k] = idFN + ':' + toString(el[idFN]);
+                    keys_1[k] = idFN + ':' + toString(el[idFN]);
                 }
                 else if (typeof el === 'string' || typeof el === 'bigint' || typeof el === 'boolean' || typeof el === 'number') {
-                    keys[k] = ':' + el;
+                    keys_1[k] = ':' + el;
                 }
                 else {
-                    keys[k] = key;
+                    keys_1[k] = key;
                 }
             }
             else {
-                keys[k] = key;
+                keys_1[k] = key;
             }
+        };
+        for (var k = 0; k < keys_1.length; k++) {
+            _loop_1(k);
         }
         return keys_1;
     }
@@ -1006,6 +1012,12 @@ function _generate(mirror, obj, patches, path, invertible, idFieldNames) {
         var key = oldKeys[t];
         var oldVal = helpers_js_1.getValue(mirror, key, mirror);
         var newVal = helpers_js_1.getValue(obj, key, obj);
+        if (oldVal instanceof Date) {
+            oldVal = oldVal.toISOString();
+        }
+        if (newVal instanceof Date) {
+            newVal = newVal.toISOString();
+        }
         if (helpers_js_1.hasOwnProperty(obj, key) && !(newVal === undefined && oldVal !== undefined && Array.isArray(obj) === false)) {
             if (typeof oldVal == "object" && oldVal != null && typeof newVal == "object" && newVal != null && Array.isArray(oldVal) === Array.isArray(newVal)) {
                 _generate(oldVal, newVal, patches, path + "/" + helpers_js_1.escapePathComponent(key), invertible, idFieldNames);

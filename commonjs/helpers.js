@@ -107,25 +107,28 @@ function _objectKeys(obj, idFieldNames) {
         return [];
     }
     if (Array.isArray(obj)) {
-        var keys = new Array(obj.length);
-        for (var k = 0; k < keys.length; k++) {
+        var keys_1 = new Array(obj.length);
+        var _loop_1 = function (k) {
             var key = "" + k;
             var el = obj[key];
             if (el != null) {
                 var idFN = idFieldNames.find(function (idField) { return !!el[idField]; });
                 if (idFN) {
-                    keys[k] = idFN + ':' + toString(el[idFN]);
+                    keys_1[k] = idFN + ':' + toString(el[idFN]);
                 }
                 else if (typeof el === 'string' || typeof el === 'bigint' || typeof el === 'boolean' || typeof el === 'number') {
-                    keys[k] = ':' + el;
+                    keys_1[k] = ':' + el;
                 }
                 else {
-                    keys[k] = key;
+                    keys_1[k] = key;
                 }
             }
             else {
-                keys[k] = key;
+                keys_1[k] = key;
             }
+        };
+        for (var k = 0; k < keys_1.length; k++) {
+            _loop_1(k);
         }
         return keys_1;
     }
