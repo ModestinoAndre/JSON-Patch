@@ -75,10 +75,13 @@ function toString(value) {
     return String(value);
 }
 exports.toString = toString;
-function getValue(obj, key, document) {
+function getValue(obj, key, document, objMap) {
     if (document === void 0) { document = undefined; }
     if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
         // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
+        if (objMap && objMap[key]) {
+            return objMap[key];
+        }
         var parts = key.split(':');
         var keyName = parts[0];
         var keyValue = parts[1];
@@ -89,9 +92,12 @@ function getValue(obj, key, document) {
 }
 exports.getValue = getValue;
 var _hasOwnProperty = Object.prototype.hasOwnProperty;
-function hasOwnProperty(obj, key) {
+function hasOwnProperty(obj, key, objMap) {
     if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
         // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
+        if (objMap && objMap[key]) {
+            return true;
+        }
         var parts = key.split(':');
         var keyName = parts[0];
         var keyValue = parts[1];
@@ -103,45 +109,54 @@ function hasOwnProperty(obj, key) {
 exports.hasOwnProperty = hasOwnProperty;
 function _objectKeys(obj, idFieldNames) {
     if (idFieldNames === void 0) { idFieldNames = ['_id']; }
+    var result = { keys: [], map: {} };
     if (obj == null) {
-        return [];
+        return result;
     }
     if (Array.isArray(obj)) {
-        var keys_1 = new Array(obj.length);
+        result.keys = new Array(obj.length);
         var _loop_1 = function (k) {
             var key = "" + k;
             var el = obj[key];
             if (el != null) {
                 var idFN = idFieldNames.find(function (idField) { return !!el[idField]; });
                 if (idFN) {
-                    keys_1[k] = idFN + ':' + toString(el[idFN]);
+                    var complexKey = idFN + ':' + toString(el[idFN]);
+                    result.keys[k] = complexKey;
+                    result.map[complexKey] = el;
                 }
                 else if (typeof el === 'string' || typeof el === 'bigint' || typeof el === 'boolean' || typeof el === 'number') {
-                    keys_1[k] = ':' + el;
+                    var complexKey = ':' + el;
+                    result.keys[k] = complexKey;
+                    result.map[complexKey] = el;
                 }
                 else {
-                    keys_1[k] = key;
+                    result.keys[k] = key;
+                    result.map[key] = el;
                 }
             }
             else {
-                keys_1[k] = key;
+                result.keys[k] = key;
+                result.map[key] = el;
             }
         };
-        for (var k = 0; k < keys_1.length; k++) {
+        for (var k = 0; k < result.keys.length; k++) {
             _loop_1(k);
         }
-        return keys_1;
+        return result;
     }
     if (Object.keys) {
-        return Object.keys(obj);
+        result.keys = Object.keys(obj);
+        result.map = obj;
+        return result;
     }
-    var keys = [];
     for (var i in obj) {
         if (hasOwnProperty(obj, i)) {
-            keys.push(i);
+            result.keys.push(i);
+            result.map[i] = obj[i];
         }
     }
-    return keys;
+    return result;
 }
 exports._objectKeys = _objectKeys;
 ;
@@ -245,9 +260,9 @@ function hasUndefined(obj) {
         }
         else if (typeof obj === "object") {
             var objKeys = _objectKeys(obj);
-            var objKeysLength = objKeys.length;
+            var objKeysLength = objKeys.keys.length;
             for (var i = 0; i < objKeysLength; i++) {
-                var value = getValue(obj, objKeys[i]);
+                var value = getValue(obj, objKeys.keys[i], undefined, objKeys.map);
                 if (hasUndefined(value)) {
                     return true;
                 }

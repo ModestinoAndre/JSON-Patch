@@ -2065,6 +2065,22 @@ describe('duplex', function() {
       jsonpatch.compare(obj, {});
       expect(obj.foo).toReallyEqual('bar');
     });
+
+    it('should use Map to optimize performance when find big arrays', function() {
+      const objA = {
+        arr: Array.from({ length: 15_000 }, (_, i) => ({ _id: String(i), value: `value ${i}` }))
+      };
+      const objB = {
+        arr: Array.from({ length: 15_000 }, (_, i) => ({ _id: String(i), value: `value ${i}` }))
+      };
+      objB.arr[14_999].value = 'value 14999 changed';
+      const t0 = Date.now();
+      const patches = jsonpatch.compare(objA, objB);
+      const t1 = Date.now();
+      console.log('Time taken to compare large arrays:', t1 - t0, 'ms');
+      expect(patches).toReallyEqual([{ op: 'replace', path: '/arr/_id:14999/value', value: 'value 14999 changed' }]);
+      expect(t1 - t0).toBeLessThan(100); // Expect the comparison to be fast
+    });
   });
 
   it('should work with plain objects', function() {

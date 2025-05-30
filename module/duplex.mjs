@@ -125,17 +125,17 @@ function _generate(mirror, obj, patches, path, invertible, idFieldNames) {
     var changed = false;
     var deleted = false;
     //if ever "move" operation is implemented here, make sure this test runs OK: "should not generate the same patch twice (move)"
-    for (var t = oldKeys.length - 1; t >= 0; t--) {
-        var key = oldKeys[t];
-        var oldVal = getValue(mirror, key, mirror);
-        var newVal = getValue(obj, key, obj);
+    for (var t = oldKeys.keys.length - 1; t >= 0; t--) {
+        var key = oldKeys.keys[t];
+        var oldVal = getValue(mirror, key, mirror, oldKeys.map);
+        var newVal = getValue(obj, key, obj, newKeys.map);
         if (oldVal instanceof Date) {
             oldVal = oldVal.toISOString();
         }
         if (newVal instanceof Date) {
             newVal = newVal.toISOString();
         }
-        if (hasOwnProperty(obj, key) && !(newVal === undefined && oldVal !== undefined && Array.isArray(obj) === false)) {
+        if (hasOwnProperty(obj, key, newKeys.map) && !(newVal === undefined && oldVal !== undefined && Array.isArray(obj) === false)) {
             if (typeof oldVal == "object" && oldVal != null && typeof newVal == "object" && newVal != null && Array.isArray(oldVal) === Array.isArray(newVal)) {
                 _generate(oldVal, newVal, patches, path + "/" + escapePathComponent(key), invertible, idFieldNames);
             }
@@ -164,13 +164,13 @@ function _generate(mirror, obj, patches, path, invertible, idFieldNames) {
             changed = true;
         }
     }
-    if (!deleted && newKeys.length == oldKeys.length) {
+    if (!deleted && newKeys.keys.length == oldKeys.keys.length) {
         return;
     }
-    for (var t = 0; t < newKeys.length; t++) {
-        var key = newKeys[t];
-        var newValue = getValue(obj, key, obj);
-        if (!hasOwnProperty(mirror, key) && newValue !== undefined) {
+    for (var t = 0; t < newKeys.keys.length; t++) {
+        var key = newKeys.keys[t];
+        var newValue = getValue(obj, key, obj, newKeys.map);
+        if (!hasOwnProperty(mirror, key, oldKeys.map) && newValue !== undefined) {
             if (Array.isArray(obj)) {
                 patches.push({ op: "add", path: path + "/-", value: _deepClone(newValue) });
             }

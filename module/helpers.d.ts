@@ -13,9 +13,14 @@
 export declare function isEquals(id1: any, id2: any): boolean;
 export declare function hasSamePropertyValue(obj1: any, obj2: any, propertyName: string): boolean;
 export declare function toString(value: any): string;
-export declare function getValue(obj: any, key: any, document?: any): any;
-export declare function hasOwnProperty(obj: any, key: any): any;
-export declare function _objectKeys(obj: any, idFieldNames?: string[]): any[];
+export declare function getValue(obj: any, key: any, document?: any, objMap?: any): any;
+export declare function hasOwnProperty(obj: any, key: any, objMap?: any): any;
+export declare function _objectKeys(obj: any, idFieldNames?: string[]): {
+    keys: string[];
+    map: {
+        [key: string]: any;
+    };
+};
 /**
 * Deeply clone the object.
 * https://jsperf.com/deep-copy-vs-json-stringify-json-parse/25 (recursiveDeepCopy)

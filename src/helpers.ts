@@ -62,9 +62,12 @@ export function toString(value: any): string {
     return String(value);
 }
 
-export function getValue(obj: any, key: any, document: any = undefined): any {
+export function getValue(obj: any, key: any, document: any = undefined, objMap?: any): any {
     if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
         // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
+        if (objMap && objMap[key]) {
+            return objMap[key];
+        }
         var parts = key.split(':');
         var keyName = parts[0];
         var keyValue = parts[1];
@@ -75,9 +78,12 @@ export function getValue(obj: any, key: any, document: any = undefined): any {
 }
 
 const _hasOwnProperty = Object.prototype.hasOwnProperty;
-export function hasOwnProperty(obj, key) {
+export function hasOwnProperty(obj, key, objMap?: any) {
     if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
         // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
+        if (objMap && objMap[key]) {
+            return true;
+        }
         var parts = key.split(':');
         var keyName = parts[0];
         var keyValue = parts[1];
@@ -86,40 +92,50 @@ export function hasOwnProperty(obj, key) {
     }
     return _hasOwnProperty.call(obj, key);
 }
-export function _objectKeys(obj, idFieldNames  = ['_id']) {
+
+export function _objectKeys(obj, idFieldNames  = ['_id']): { keys: string[], map: { [key: string]: any } } {
+    const result = { keys: [], map: {} };
     if (obj == null) {
-        return [];
+        return result;
     }
     if (Array.isArray(obj)) {
-        const keys = new Array(obj.length);
-        for (let k = 0; k < keys.length; k++) {
+        result.keys = new Array(obj.length);
+        for (let k = 0; k < result.keys.length; k++) {
             let key = "" + k;
             let el = obj[key];
             if (el != null) {
                 const idFN = idFieldNames.find(idField => !!el[idField]);
                 if (idFN) {
-                    keys[k] = idFN + ':' + toString(el[idFN]);
+                    const complexKey = idFN + ':' + toString(el[idFN]);
+                    result.keys[k] = complexKey;
+                    result.map[complexKey] = el;
                 } else if (typeof el === 'string' || typeof el === 'bigint' || typeof el === 'boolean' || typeof el === 'number') {
-                    keys[k] = ':' + el;
+                    const complexKey = ':' + el;
+                    result.keys[k] = complexKey;
+                    result.map[complexKey] = el;
                 } else {
-                    keys[k] = key;
+                    result.keys[k] = key;
+                    result.map[key] = el;
                 }
             } else {
-                keys[k] = key;
+                result.keys[k] = key;
+                result.map[key] = el;
             }
         }
-        return keys;
+        return result;
     }
     if (Object.keys) {
-        return Object.keys(obj);
+        result.keys = Object.keys(obj);
+        result.map = obj;
+        return result;
     }
-    let keys = [];
     for (let i in obj) {
         if (hasOwnProperty(obj, i)) {
-            keys.push(i);
+            result.keys.push(i);
+            result.map[i] = obj[i];
         }
     }
-    return keys;
+    return result;
 };
 /**
 * Deeply clone the object.
@@ -216,9 +232,9 @@ export function hasUndefined(obj: any): boolean {
         }
         else if (typeof obj === "object") {
             const objKeys = _objectKeys(obj);
-            const objKeysLength = objKeys.length;
+            const objKeysLength = objKeys.keys.length;
             for (var i = 0; i < objKeysLength; i++) {
-                const value = getValue(obj, objKeys[i]);
+                const value = getValue(obj, objKeys.keys[i], undefined, objKeys.map);
                 if (hasUndefined(value)) {
                     return true;
                 }
