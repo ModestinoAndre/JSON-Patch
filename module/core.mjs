@@ -242,23 +242,30 @@ export function applyOperation(document, operation, validateOperation, mutateDoc
                         var parts = key.split(':');
                         var keyName = parts[0];
                         var keyValue = parts[1];
+                        var found = false;
                         if (arraysMaps && keyName) {
                             var fullPath = keys.slice(0, t - 1).join('/');
                             var arrayMap = arraysMaps[fullPath];
                             if (!arrayMap) {
-                                arrayMap = obj.reduce(function (acc, item) {
-                                    acc[item[keyName]] = item;
+                                arrayMap = obj.reduce(function (acc, item, index) {
+                                    acc[item[keyName]] = { item: item, index: index };
                                     return acc;
                                 }, {});
                                 arraysMaps[fullPath] = arrayMap;
                             }
-                            var item = arrayMap[keyValue];
-                            if (item) {
-                                obj = item;
-                                continue;
+                            var wrapper = arrayMap[keyValue];
+                            if (wrapper) {
+                                // check if the item is still in the same position on the array and has the same key value
+                                var itemFromArray = obj[wrapper.index];
+                                if (itemFromArray && itemFromArray[keyName] === keyValue) {
+                                    key = wrapper.index;
+                                    found = true;
+                                }
                             }
                         }
-                        key = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : isEquals(el[keyName], keyValue); });
+                        if (!found) {
+                            key = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : isEquals(el[keyName], keyValue); });
+                        }
                         if (validateOperation && key === -1) {
                             throw new JsonPatchError('Cannot perform the operation at a path that does not exist', 'OPERATION_PATH_UNRESOLVABLE', index, operation, document);
                         }

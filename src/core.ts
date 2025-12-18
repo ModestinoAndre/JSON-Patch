@@ -211,7 +211,7 @@ export function applyOperation<T>(document: T,
                                   banPrototypeModifications: boolean = true,
                                   index: number = 0,
                                   idFieldNames  = ['_id'],
-                                  arraysMaps?: Record<string, Record<string, any>>): OperationResult<T> {
+                                  arraysMaps?: Record<string, Record<string, { item: any, index: number }>>): OperationResult<T> {
   if (validateOperation) {
     if (typeof validateOperation == 'function') {
       validateOperation(operation, 0, document, operation.path);
@@ -321,25 +321,32 @@ export function applyOperation<T>(document: T,
             var parts = key.split(':');
             var keyName = parts[0];
             var keyValue = parts[1];
+            var found = false;
 
             if (arraysMaps && keyName) {
               const fullPath = keys.slice(0, t - 1).join('/');
               let arrayMap = arraysMaps[fullPath];
               if (!arrayMap) {
-                arrayMap = obj.reduce((acc, item) => {
-                  acc[item[keyName]] = item;
+                arrayMap = obj.reduce((acc, item, index) => {
+                  acc[item[keyName]] = { item, index };
                   return acc;
                 }, {});
                 arraysMaps[fullPath] = arrayMap;
               }
-              const item = arrayMap[keyValue];
-              if (item) {
-                obj = item;
-                continue;
+              const wrapper = arrayMap[keyValue];
+              if (wrapper) {
+                // check if the item is still in the same position on the array and has the same key value
+                const itemFromArray = obj[wrapper.index];
+                if (itemFromArray && itemFromArray[keyName] === keyValue) {
+                  key = wrapper.index;
+                  found = true;
+                }
               }
             }
 
-            key = obj.findIndex(el => (keyName == null || keyName.length == 0) ? el == keyValue : isEquals(el[keyName], keyValue));
+            if (!found) {
+              key = obj.findIndex(el => (keyName == null || keyName.length == 0) ? el == keyValue : isEquals(el[keyName], keyValue));
+            }
             if (validateOperation && key === -1) {
               throw new JsonPatchError('Cannot perform the operation at a path that does not exist', 'OPERATION_PATH_UNRESOLVABLE', index, operation, document);
             }
