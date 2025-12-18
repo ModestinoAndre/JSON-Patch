@@ -65,9 +65,10 @@ export declare function getValueByPointer(document: any, pointer: string): any;
  * @param mutateDocument Whether to mutate the original document or clone it before applying
  * @param banPrototypeModifications Whether to ban modifications to `__proto__`, defaults to `true`.
  * @param idFieldNames Array with possible names for id-fields, e.g. ['_id', 'id']
+ * @param arraysMaps Map of array's map (used to avoid full array scan when there are multiple patches for the same array)
  * @return `{newDocument, result}` after the operation
  */
-export declare function applyOperation<T>(document: T, operation: Operation, validateOperation?: boolean | Validator<T>, mutateDocument?: boolean, banPrototypeModifications?: boolean, index?: number, idFieldNames?: string[]): OperationResult<T>;
+export declare function applyOperation<T>(document: T, operation: Operation, validateOperation?: boolean | Validator<T>, mutateDocument?: boolean, banPrototypeModifications?: boolean, index?: number, idFieldNames?: string[], arraysMaps?: Record<string, Record<string, any>>): OperationResult<T>;
 /**
  * Apply a full JSON Patch array on a JSON document.
  * Returns the {newDocument, result} of the patch.

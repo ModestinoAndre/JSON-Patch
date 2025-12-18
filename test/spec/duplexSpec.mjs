@@ -2081,6 +2081,21 @@ describe('duplex', function() {
       expect(patches).toReallyEqual([{ op: 'replace', path: '/arr/_id:14999/value', value: 'value 14999 changed' }]);
       expect(t1 - t0).toBeLessThan(100); // Expect the comparison to be fast
     });
+
+    it('should use Map to optimize performance when patching big arrays', function() {
+      const arr1 = Array.from({ length: 100 }, (_, i) => ({ _id: String(i), value: `value ${i}`, arr2: [] }));
+      const arr2 = Array.from({ length: 15_000 }, (_, i) => ({ _id: String(i), value: `value ${i}` }));
+      arr1[99].arr2 = arr2;
+      const objA = { arr1 };
+      const patches = arr2.map((item, i) => ({ op: 'replace', path: `/arr1/_id:99/arr2/_id:${14_999 - i}/value`, value: `value ${14_999 - i} changed` }));
+      const t0 = Date.now();
+      jsonpatch.applyPatch(objA, patches);
+      const t1 = Date.now();
+      console.log('Time taken to patch large arrays:', t1 - t0, 'ms');
+      expect(objA.arr1[99].arr2[0].value).toBe('value 0 changed');
+      expect(objA.arr1[99].arr2[14_999].value).toBe('value 14999 changed');
+      expect(t1 - t0).toBeLessThan(200); // Expect the comparison to be fast
+    });
   });
 
   it('should work with plain objects', function() {

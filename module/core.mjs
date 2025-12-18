@@ -60,7 +60,7 @@ var arrOps = {
                 return { newDocument: document, index: i };
             }
         }
-        var idFN = idFieldNames.find(function (idField) { return _this.value[idField] != null; });
+        var idFN = idFieldNames.find(function (idField) { return !!_this.value && _this.value[idField] != null; });
         if (idFN) {
             var idx = arr.findIndex(function (el) { return hasSamePropertyValue(el, _this.value, idFN); });
             if (idx !== -1) {
@@ -121,9 +121,10 @@ export function getValueByPointer(document, pointer) {
  * @param mutateDocument Whether to mutate the original document or clone it before applying
  * @param banPrototypeModifications Whether to ban modifications to `__proto__`, defaults to `true`.
  * @param idFieldNames Array with possible names for id-fields, e.g. ['_id', 'id']
+ * @param arraysMaps Map of array's map (used to avoid full array scan when there are multiple patches for the same array)
  * @return `{newDocument, result}` after the operation
  */
-export function applyOperation(document, operation, validateOperation, mutateDocument, banPrototypeModifications, index, idFieldNames) {
+export function applyOperation(document, operation, validateOperation, mutateDocument, banPrototypeModifications, index, idFieldNames, arraysMaps) {
     if (validateOperation === void 0) { validateOperation = false; }
     if (mutateDocument === void 0) { mutateDocument = true; }
     if (banPrototypeModifications === void 0) { banPrototypeModifications = true; }
@@ -241,6 +242,22 @@ export function applyOperation(document, operation, validateOperation, mutateDoc
                         var parts = key.split(':');
                         var keyName = parts[0];
                         var keyValue = parts[1];
+                        if (arraysMaps && keyName) {
+                            var fullPath = keys.slice(0, t - 1).join('/');
+                            var arrayMap = arraysMaps[fullPath];
+                            if (!arrayMap) {
+                                arrayMap = obj.reduce(function (acc, item) {
+                                    acc[item[keyName]] = item;
+                                    return acc;
+                                }, {});
+                                arraysMaps[fullPath] = arrayMap;
+                            }
+                            var item = arrayMap[keyValue];
+                            if (item) {
+                                obj = item;
+                                continue;
+                            }
+                        }
                         key = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : isEquals(el[keyName], keyValue); });
                         if (validateOperation && key === -1) {
                             throw new JsonPatchError('Cannot perform the operation at a path that does not exist', 'OPERATION_PATH_UNRESOLVABLE', index, operation, document);
@@ -304,9 +321,10 @@ export function applyPatch(document, patch, validateOperation, mutateDocument, b
         document = _deepClone(document);
     }
     var results = new Array(patch.length);
+    var arraysMaps = patch.length > 50 ? {} : undefined;
     for (var i = 0, length_1 = patch.length; i < length_1; i++) {
-        // we don't need to pass mutateDocument argument because if it was true, we already deep cloned the object, we'll just pass `true`
-        results[i] = applyOperation(document, patch[i], validateOperation, true, banPrototypeModifications, i, idFieldNames);
+        // we don't need to pass mutateDocument argument because if it was false, we already deep cloned the object, we'll just pass `true`
+        results[i] = applyOperation(document, patch[i], validateOperation, true, banPrototypeModifications, i, idFieldNames, arraysMaps);
         document = results[i].newDocument; // in case root was replaced
     }
     results.newDocument = document;
