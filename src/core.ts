@@ -337,7 +337,7 @@ export function applyOperation<T>(document: T,
               if (wrapper) {
                 // check if the item is still in the same position on the array and has the same key value
                 const itemFromArray = obj[wrapper.index];
-                if (itemFromArray && itemFromArray[keyName] === keyValue) {
+                if (itemFromArray && isEquals(itemFromArray[keyName], keyValue)) {
                   key = wrapper.index;
                   found = true;
                 }

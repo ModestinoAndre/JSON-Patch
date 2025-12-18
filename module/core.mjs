@@ -257,7 +257,7 @@ export function applyOperation(document, operation, validateOperation, mutateDoc
                             if (wrapper) {
                                 // check if the item is still in the same position on the array and has the same key value
                                 var itemFromArray = obj[wrapper.index];
-                                if (itemFromArray && itemFromArray[keyName] === keyValue) {
+                                if (itemFromArray && isEquals(itemFromArray[keyName], keyValue)) {
                                     key = wrapper.index;
                                     found = true;
                                 }

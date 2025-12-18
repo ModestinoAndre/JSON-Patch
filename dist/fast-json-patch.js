@@ -1,4 +1,4 @@
-/*! fast-json-patch, version: 3.1.3 */
+/*! fast-json-patch, version: 3.1.4 */
 var jsonpatch =
 /******/ (function(modules) { // webpackBootstrap
 /******/ 	// The module cache
@@ -657,7 +657,7 @@ function applyOperation(document, operation, validateOperation, mutateDocument, 
                             if (wrapper) {
                                 // check if the item is still in the same position on the array and has the same key value
                                 var itemFromArray = obj[wrapper.index];
-                                if (itemFromArray && itemFromArray[keyName] === keyValue) {
+                                if (itemFromArray && helpers_js_1.isEquals(itemFromArray[keyName], keyValue)) {
                                     key = wrapper.index;
                                     found = true;
                                 }
