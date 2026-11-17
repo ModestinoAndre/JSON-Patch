@@ -266,8 +266,14 @@ export function applyOperation(document, operation, validateOperation, mutateDoc
                         if (!found) {
                             key = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : isEquals(el[keyName], keyValue); });
                         }
-                        if (validateOperation && key === -1) {
-                            throw new JsonPatchError('Cannot perform the operation at a path that does not exist', 'OPERATION_PATH_UNRESOLVABLE', index, operation, document);
+                        if (key === -1) {
+                            // id not found: never fall through to splice(-1, 1) / arr[-1], which would hit the last item
+                            if (t >= len && !validateOperation && operation.op === 'remove') {
+                                return { newDocument: document }; // already gone: idempotent no-op
+                            }
+                            if (t < len || validateOperation || operation.op !== '_get') {
+                                throw new JsonPatchError('Cannot perform the operation at a path that does not exist', 'OPERATION_PATH_UNRESOLVABLE', index, operation, document);
+                            }
                         }
                     }
                 }

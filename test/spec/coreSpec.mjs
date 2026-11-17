@@ -2100,6 +2100,69 @@ describe('compare - index array by (_id:value | :value), ', function () {
         const patches = jsonpatch.compare(obj, obj2);
         expect(patches).toEqual([]);
     });
+
+    describe('id not found (without validation)', function () {
+        const makeRoles = () => [{_id: '1a', n: 'a'}, {_id: '1b', n: 'b'}, {_id: '1c', n: 'c'}];
+        const expectUnresolvable = (fn) => {
+            let error;
+            try {
+                fn();
+            } catch (e) {
+                error = e;
+            }
+            expect(error instanceof jsonpatch.JsonPatchError).toBe(true);
+            expect(error && error.name).toEqual('OPERATION_PATH_UNRESOLVABLE');
+        };
+
+        it('remove is a no-op and does not remove the last element', function () {
+            const obj = {roles: makeRoles()};
+            const results = jsonpatch.applyPatch(obj, [{op: 'remove', path: '/roles/_id:1x'}]);
+            expect(obj.roles).toEqual(makeRoles());
+            expect(results[0].removed).toBeUndefined();
+        });
+
+        it('remove is a no-op inside a big patch (arrays map)', function () {
+            const obj = {roles: makeRoles()};
+            const patches = [];
+            for (let i = 0; i < 60; i++) {
+                patches.push({op: 'remove', path: '/roles/_id:1x'});
+            }
+            jsonpatch.applyPatch(obj, patches);
+            expect(obj.roles).toEqual(makeRoles());
+        });
+
+        it('remove of the same id twice only removes it once', function () {
+            const obj = {roles: makeRoles()};
+            jsonpatch.applyPatch(obj, [{op: 'remove', path: '/roles/_id:1b'}]);
+            jsonpatch.applyPatch(obj, [{op: 'remove', path: '/roles/_id:1b'}]);
+            expect(obj.roles).toEqual([{_id: '1a', n: 'a'}, {_id: '1c', n: 'c'}]);
+        });
+
+        it('replace throws and leaves the array untouched', function () {
+            const obj = {roles: makeRoles()};
+            expectUnresolvable(() => jsonpatch.applyPatch(obj, [{op: 'replace', path: '/roles/_id:1x', value: {_id: '1x', n: 'x'}}]));
+            expect(obj.roles).toEqual(makeRoles());
+            expect(obj.roles['-1']).toBeUndefined();
+        });
+
+        it('add throws and leaves the array untouched', function () {
+            const obj = {roles: makeRoles()};
+            expectUnresolvable(() => jsonpatch.applyPatch(obj, [{op: 'add', path: '/roles/_id:1x', value: {_id: '1z', n: 'z'}}]));
+            expect(obj.roles).toEqual(makeRoles());
+        });
+
+        it('nested path throws JsonPatchError instead of TypeError', function () {
+            const obj = {roles: makeRoles()};
+            expectUnresolvable(() => jsonpatch.applyPatch(obj, [{op: 'replace', path: '/roles/_id:1x/n', value: 'x'}]));
+            expectUnresolvable(() => jsonpatch.applyPatch(obj, [{op: 'remove', path: '/roles/_id:1x/n'}]));
+            expect(obj.roles).toEqual(makeRoles());
+        });
+
+        it('getValueByPointer still returns undefined', function () {
+            const obj = {roles: makeRoles()};
+            expect(jsonpatch.getValueByPointer(obj, '/roles/_id:1x')).toBeUndefined();
+        });
+    });
 });
 
 describe('compare - index array by (otherId:value | :value), ', function () {
