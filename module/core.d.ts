@@ -51,7 +51,7 @@ export interface PatchResult<T> extends Array<OperationResult<T>> {
  * @param pointer an escaped JSON pointer
  * @return The retrieved value
  */
-export declare function getValueByPointer(document: any, pointer: string): any;
+export declare function getValueByPointer(document: any, pointer: string, isFrom?: boolean): any;
 /**
  * Apply a single JSON Patch Operation on a JSON document.
  * Returns the {newDocument, result} of the operation.

@@ -12,8 +12,15 @@ import {
   unescapePathComponent,
   hasUndefined,
   getValue,
-  hasSamePropertyValue, isEquals
+  hasSamePropertyValue,
+  splitIdKey,
+  findIndexByIdKey,
+  toString as idToString
 } from './helpers.js';
+
+const _hasOwnProperty = Object.prototype.hasOwnProperty;
+// biggest valid array index (2^32 - 2)
+const MAX_ARRAY_INDEX = 4294967294;
 
 export const JsonPatchError = PatchError;
 export const deepClone = _deepClone;
@@ -104,8 +111,9 @@ const objOps = {
       removed = _deepClone(removed);
     }
 
+    // `_from` makes an array element that cannot be found an error instead of a silent no-op
     const originalValue = applyOperation(document,
-      { op: "remove", path: this.from }
+      <any>{ op: "remove", path: this.from, _from: true }
     ).removed;
 
     applyOperation(document,
@@ -115,7 +123,7 @@ const objOps = {
     return { newDocument: document, removed };
   },
   copy: function (obj, key, document) {
-    const valueToCopy = getValueByPointer(document, this.from);
+    const valueToCopy = getValueByPointer(document, this.from, true);
     // enforce copy by value so further operations don't affect source (see issue #177)
     applyOperation(document,
       { op: "add", path: this.path, value: _deepClone(valueToCopy) }
@@ -180,11 +188,14 @@ var arrOps = {
  * @param pointer an escaped JSON pointer
  * @return The retrieved value
  */
-export function getValueByPointer(document: any, pointer: string): any {
+export function getValueByPointer(document: any, pointer: string, isFrom: boolean = false): any {
   if (pointer == '') {
     return document;
   }
   var getOriginalDestination = <GetOperation<any>>{ op: "_get", path: pointer };
+  if (isFrom) {
+    (<any>getOriginalDestination)._from = true; // see objOps.move
+  }
   applyOperation(document, getOriginalDestination);
   return getOriginalDestination.value;
 }
@@ -232,7 +243,7 @@ export function applyOperation<T>(document: T,
       return returnValue;
     }
     else if (operation.op === 'move' || operation.op === 'copy') { // it's a move or copy to root
-      returnValue.newDocument = getValueByPointer(document, operation.from); // get the value by json-pointer in `from` field
+      returnValue.newDocument = getValueByPointer(document, operation.from, true); // get the value by json-pointer in `from` field
       if (operation.op === 'move') { // report removed item
         returnValue.removed = document;
       }
@@ -260,10 +271,16 @@ export function applyOperation<T>(document: T,
     }
   } /* END ROOT OPERATIONS */
   else {
+    if (typeof operation.path !== 'string') {
+      throw new JsonPatchError('Operation `path` property is not a string', 'OPERATION_PATH_INVALID', index, operation, document);
+    }
+    if (!_hasOwnProperty.call(objOps, operation.op)) {
+      throw new JsonPatchError('Operation `op` property is not one of operations defined in RFC-6902', 'OPERATION_OP_INVALID', index, operation, document);
+    }
     if (!mutateDocument) {
       document = _deepClone(document);
     }
-    const path = operation.path || "";
+    const path = operation.path;
     const keys = path.split('/');
     let obj = document;
     let t = 1; //skip empty element - http://jsperf.com/to-shift-or-not-to-shift
@@ -310,34 +327,52 @@ export function applyOperation<T>(document: T,
         }
         else {
           var indexById = key.indexOf(':') !== -1
-          if (validateOperation && !isInteger(key) && !indexById) {
+          // true when the key cannot address any element of this array
+          var notFound = false;
+          if (key === '') {
+            notFound = true; // an empty segment is not the index 0
+          }
+          else if (validateOperation && !isInteger(key) && !indexById) {
             throw new JsonPatchError("Expected an unsigned base-10 integer value, making the new referenced value the array element with the zero-based index", "OPERATION_PATH_ILLEGAL_ARRAY_INDEX", index, operation, document);
           } // only parse key when it's an integer for `arr.prop` to work
           else if(isInteger(key)) {
-            key = ~~key;
+            // ~~ wraps around above 2^31 (e.g. ~~'4294967295' === -1), so it is only used for short keys
+            key = key.length < 10 ? ~~key : Number(key);
+            if (key > MAX_ARRAY_INDEX) {
+              notFound = true;
+            }
+            else if (key >= obj.length && t >= len && operation.op === 'replace') {
+              // there is nothing to replace; `arr[key] = value` would grow the array up to that index
+              // (e.g. `replace /arr/4000000000` creates an array with 4 billion empty slots)
+              notFound = true;
+            }
           }
           else if (indexById) {
-            // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
-            var parts = key.split(':');
-            var keyName = parts[0];
-            var keyValue = parts[1];
+            var idKey = splitIdKey(key);
+            var keyName = idKey.keyName;
+            var keyValue = idKey.keyValue;
             var found = false;
 
             if (arraysMaps && keyName) {
               const fullPath = keys.slice(0, t - 1).join('/');
               let arrayMap = arraysMaps[fullPath];
               if (!arrayMap) {
-                arrayMap = obj.reduce((acc, item, index) => {
-                  acc[item[keyName]] = { item, index };
-                  return acc;
-                }, {});
+                arrayMap = Object.create(null);
+                for (let i = 0; i < obj.length; i++) {
+                  const item = obj[i];
+                  const itemKey = item == null ? undefined : idToString(item[keyName]);
+                  // the first element wins, as it does when scanning the array
+                  if (itemKey !== undefined && arrayMap[itemKey] === undefined) {
+                    arrayMap[itemKey] = { item, index: i };
+                  }
+                }
                 arraysMaps[fullPath] = arrayMap;
               }
               const wrapper = arrayMap[keyValue];
               if (wrapper) {
                 // check if the item is still in the same position on the array and has the same key value
                 const itemFromArray = obj[wrapper.index];
-                if (itemFromArray && isEquals(itemFromArray[keyName], keyValue)) {
+                if (itemFromArray != null && idToString(itemFromArray[keyName]) === keyValue) {
                   key = wrapper.index;
                   found = true;
                 }
@@ -345,16 +380,22 @@ export function applyOperation<T>(document: T,
             }
 
             if (!found) {
-              key = obj.findIndex(el => (keyName == null || keyName.length == 0) ? el == keyValue : isEquals(el[keyName], keyValue));
+              key = findIndexByIdKey(obj, keyName, keyValue);
             }
             if (key === -1) {
-              // id not found: never fall through to splice(-1, 1) / arr[-1], which would hit the last item
-              if (t >= len && !validateOperation && operation.op === 'remove') {
-                return { newDocument: document }; // already gone: idempotent no-op
-              }
-              if (t < len || validateOperation || operation.op !== '_get') {
-                throw new JsonPatchError('Cannot perform the operation at a path that does not exist', 'OPERATION_PATH_UNRESOLVABLE', index, operation, document);
-              }
+              notFound = true;
+            }
+          }
+          if (notFound) {
+            // never fall through to splice(-1, 1) / arr[-1] / arr[''], which would hit the wrong item
+            if ((<any>operation)._from) {
+              throw new JsonPatchError('Cannot perform the operation from a path that does not exist', 'OPERATION_FROM_UNRESOLVABLE', index, operation, document);
+            }
+            if (t >= len && !validateOperation && operation.op === 'remove') {
+              return { newDocument: document }; // already gone: idempotent no-op
+            }
+            if (t < len || validateOperation || operation.op !== '_get') {
+              throw new JsonPatchError('Cannot perform the operation at a path that does not exist', 'OPERATION_PATH_UNRESOLVABLE', index, operation, document);
             }
           }
         }
@@ -379,9 +420,14 @@ export function applyOperation<T>(document: T,
         }
       }
       obj = obj[key];
+      // A JSON document has no functions: reaching one means the path is walking the prototype chain
+      // (e.g. `/constructor/keys` would end up writing to the global `Object`).
+      if (banPrototypeModifications && typeof obj === 'function') {
+        throw new TypeError('JSON-Patch: modifying `__proto__` or `constructor/prototype` prop is banned for security reasons, if this was on purpose, please set `banPrototypeModifications` flag false and pass it to this function. More info in fast-json-patch README');
+      }
       // If we have more keys in the path, but the next value isn't a non-null object,
       // throw an OPERATION_PATH_UNRESOLVABLE error instead of iterating again.
-      if (validateOperation && t < len && (!obj || typeof obj !== "object")){
+      if (t < len && (obj == null || (validateOperation && typeof obj !== "object"))){
         throw new JsonPatchError('Cannot perform operation at the desired path', 'OPERATION_PATH_UNRESOLVABLE', index, operation, document);
       }
     }
@@ -457,7 +503,7 @@ export function validator(operation: Operation, index: number, document?: any, e
     throw new JsonPatchError('Operation is not an object', 'OPERATION_NOT_AN_OBJECT', index, operation, document);
   }
 
-  else if (!objOps[operation.op]) {
+  else if (!_hasOwnProperty.call(objOps, operation.op)) {
     throw new JsonPatchError('Operation `op` property is not one of operations defined in RFC-6902', 'OPERATION_OP_INVALID', index, operation, document);
   }
 
@@ -587,7 +633,7 @@ export function _areEquals(a: any, b: any): boolean {
       return false;
 
     for (i = length; i-- !== 0;)
-      if (!b.hasOwnProperty(keys[i])) return false;
+      if (!_hasOwnProperty.call(b, keys[i])) return false;
 
     for (i = length; i-- !== 0;) {
       key = keys[i];

@@ -103,7 +103,7 @@ function generate(observer, invertible, idFieldNames) {
     var mirror = beforeDict.get(observer.object);
     _generate(mirror.value, observer.object, observer.patches, "", invertible, idFieldNames);
     if (observer.patches.length) {
-        core_js_1.applyPatch(mirror.value, observer.patches);
+        core_js_1.applyPatch(mirror.value, observer.patches, false, true, true, idFieldNames);
     }
     var temp = observer.patches;
     if (temp.length > 0) {
@@ -123,6 +123,14 @@ function _generate(mirror, obj, patches, path, invertible, idFieldNames) {
     }
     if (typeof obj.toJSON === "function") {
         obj = obj.toJSON();
+    }
+    if (Array.isArray(mirror) !== Array.isArray(obj)) {
+        // array <-> object: nothing to diff key by key, replace the whole value once
+        if (invertible) {
+            patches.push({ op: "test", path: path, value: helpers_js_1._deepClone(mirror) });
+        }
+        patches.push({ op: "replace", path: path, value: helpers_js_1._deepClone(obj) });
+        return;
     }
     var newKeys = helpers_js_1._objectKeys(obj, idFieldNames);
     var oldKeys = helpers_js_1._objectKeys(mirror, idFieldNames);
@@ -144,7 +152,7 @@ function _generate(mirror, obj, patches, path, invertible, idFieldNames) {
                 _generate(oldVal, newVal, patches, path + "/" + helpers_js_1.escapePathComponent(key), invertible, idFieldNames);
             }
             else {
-                if (!helpers_js_1.isEquals(oldVal, newVal)) {
+                if (!helpers_js_1.isSameValue(oldVal, newVal)) {
                     changed = true;
                     if (invertible) {
                         patches.push({ op: "test", path: path + "/" + helpers_js_1.escapePathComponent(key), value: helpers_js_1._deepClone(oldVal) });

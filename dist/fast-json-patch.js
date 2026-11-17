@@ -126,12 +126,12 @@ function isEquals(id1, id2) {
     if (id1 == null || id2 == null) {
         return false;
     }
-    if (typeof id1 === 'object' && 'equals' in id1) {
+    if (typeof id1 === 'object' && typeof id1.equals === 'function') {
         if (id1.equals(id2)) {
             return true;
         }
     }
-    if (typeof id2 === 'object' && 'equals' in id2) {
+    if (typeof id2 === 'object' && typeof id2.equals === 'function') {
         if (id2.equals(id1)) {
             return true;
         }
@@ -139,6 +139,31 @@ function isEquals(id1, id2) {
     return false;
 }
 exports.isEquals = isEquals;
+/**
+ * Compares two document values when generating a diff. <br>
+ * Unlike isEquals(), it does not use loose equality: 1 and '1', false and 0, '' and false are different values. <br>
+ * null and undefined are equivalent, and an object exposing equals() (e.g. ObjectId) can match its serialized form.
+ */
+function isSameValue(a, b) {
+    if (a === b) {
+        return true;
+    }
+    if (a == null || b == null) {
+        return a == null && b == null;
+    }
+    if (typeof a === 'object' && typeof a.equals === 'function') {
+        if (a.equals(b)) {
+            return true;
+        }
+    }
+    if (typeof b === 'object' && typeof b.equals === 'function') {
+        if (b.equals(a)) {
+            return true;
+        }
+    }
+    return a !== a && b !== b; // NaN
+}
+exports.isSameValue = isSameValue;
 function hasSamePropertyValue(obj1, obj2, propertyName) {
     if (obj1 == null || obj2 == null || !propertyName) {
         return false;
@@ -167,34 +192,68 @@ function toString(value) {
     return String(value);
 }
 exports.toString = toString;
+/**
+ * Splits an array key like '_id:abc' into its field name and value. <br>
+ * Only the first ':' is a separator, so the value itself may contain ':' (e.g. '_id:user:123'). <br>
+ * A key like ':abc' (empty name) addresses a primitive element by its value.
+ */
+function splitIdKey(key) {
+    var pos = key.indexOf(':');
+    return { keyName: key.substring(0, pos), keyValue: key.substring(pos + 1) };
+}
+exports.splitIdKey = splitIdKey;
+function isSameId(id, keyValue) {
+    if (id == null) {
+        return false;
+    }
+    if (typeof id === 'string') {
+        return id === keyValue;
+    }
+    if (toString(id) === keyValue) {
+        return true;
+    }
+    return typeof id === 'object' && typeof id.equals === 'function' && !!id.equals(keyValue);
+}
+/**
+ * Finds the index of the array element addressed by keyName/keyValue (see splitIdKey).
+ * Returns -1 when there is no such element.
+ */
+function findIndexByIdKey(arr, keyName, keyValue) {
+    if (keyName == null || keyName.length == 0) {
+        return arr.findIndex(function (el) {
+            var type = typeof el;
+            return (type === 'string' || type === 'number' || type === 'boolean' || type === 'bigint') && String(el) === keyValue;
+        });
+    }
+    return arr.findIndex(function (el) { return el != null && isSameId(el[keyName], keyValue); });
+}
+exports.findIndexByIdKey = findIndexByIdKey;
 function getValue(obj, key, document, objMap) {
     if (document === void 0) { document = undefined; }
-    if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
-        // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
-        if (objMap && objMap[key]) {
-            return objMap[key];
+    if (Array.isArray(obj)) {
+        if (objMap) {
+            // the map has every key of the array, so there is no need to scan it
+            return _hasOwnProperty.call(objMap, key) ? objMap[key] : undefined;
         }
-        var parts = key.split(':');
-        var keyName = parts[0];
-        var keyValue = parts[1];
-        var index = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : isEquals(el[keyName], keyValue); });
-        return index === -1 ? undefined : obj[index];
+        if (typeof key === 'string' && key.indexOf(':') !== -1) {
+            var idKey = splitIdKey(key);
+            var index = findIndexByIdKey(obj, idKey.keyName, idKey.keyValue);
+            return index === -1 ? undefined : obj[index];
+        }
     }
     return obj[key];
 }
 exports.getValue = getValue;
 var _hasOwnProperty = Object.prototype.hasOwnProperty;
 function hasOwnProperty(obj, key, objMap) {
-    if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
-        // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
-        if (objMap && objMap[key]) {
-            return true;
+    if (Array.isArray(obj)) {
+        if (objMap) {
+            return _hasOwnProperty.call(objMap, key);
         }
-        var parts = key.split(':');
-        var keyName = parts[0];
-        var keyValue = parts[1];
-        var index = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : isEquals(el[keyName], keyValue); });
-        return index !== -1;
+        if (typeof key === 'string' && key.indexOf(':') !== -1) {
+            var idKey = splitIdKey(key);
+            return findIndexByIdKey(obj, idKey.keyName, idKey.keyValue) !== -1;
+        }
     }
     return _hasOwnProperty.call(obj, key);
 }
@@ -211,7 +270,8 @@ function _objectKeys(obj, idFieldNames) {
             var key = "" + k;
             var el = obj[key];
             if (el != null) {
-                var idFN = idFieldNames.find(function (idField) { return !!el[idField]; });
+                // 0 is a valid id; only null, undefined and '' mean "no id"
+                var idFN = typeof el === 'object' ? idFieldNames.find(function (idField) { return el[idField] != null && el[idField] !== ''; }) : undefined;
                 if (idFN) {
                     var complexKey = idFN + ':' + toString(el[idFN]);
                     result.keys[k] = complexKey;
@@ -221,6 +281,9 @@ function _objectKeys(obj, idFieldNames) {
                     var complexKey = ':' + el;
                     result.keys[k] = complexKey;
                     result.map[complexKey] = el;
+                    // also reachable by position, so an element without id on the other side (e.g. null)
+                    // is compared with the primitive that took its place
+                    result.map[key] = el;
                 }
                 else {
                     result.keys[k] = key;
@@ -261,7 +324,15 @@ exports._objectKeys = _objectKeys;
 function _deepClone(obj) {
     switch (typeof obj) {
         case "object":
-            return JSON.parse(JSON.stringify(obj)); //Faster than ES5 clone - http://jsperf.com/deep-cloning-of-objects/5
+            try {
+                return JSON.parse(JSON.stringify(obj)); //Faster than ES5 clone - http://jsperf.com/deep-cloning-of-objects/5
+            }
+            catch (e) {
+                if (e instanceof TypeError && /BigInt/i.test(e.message)) {
+                    return _deepCloneKeepingBigInt(obj); // JSON cannot serialize BigInt
+                }
+                throw e;
+            }
         case "undefined":
             return null; //this is how JSON.stringify behaves for array items
         default:
@@ -269,6 +340,32 @@ function _deepClone(obj) {
     }
 }
 exports._deepClone = _deepClone;
+// Same result as JSON.parse(JSON.stringify(obj)), but keeps BigInt values
+function _deepCloneKeepingBigInt(obj) {
+    if (obj === null || typeof obj !== 'object') {
+        return obj;
+    }
+    if (typeof obj.toJSON === 'function') {
+        return _deepCloneKeepingBigInt(obj.toJSON());
+    }
+    if (Array.isArray(obj)) {
+        var arr = new Array(obj.length);
+        for (var i = 0; i < obj.length; i++) {
+            var el = obj[i];
+            arr[i] = (el === undefined || typeof el === 'function' || typeof el === 'symbol') ? null : _deepCloneKeepingBigInt(el);
+        }
+        return arr;
+    }
+    var clone = {};
+    var keys = Object.keys(obj);
+    for (var i = 0; i < keys.length; i++) {
+        var value = obj[keys[i]];
+        if (value !== undefined && typeof value !== 'function' && typeof value !== 'symbol') {
+            clone[keys[i]] = _deepCloneKeepingBigInt(value);
+        }
+    }
+    return clone;
+}
 //3x faster than cached /^\d+$/.test(str)
 function isInteger(str) {
     var i = 0;
@@ -398,6 +495,9 @@ exports.PatchError = PatchError;
 
 Object.defineProperty(exports, "__esModule", { value: true });
 var helpers_js_1 = __webpack_require__(0);
+var _hasOwnProperty = Object.prototype.hasOwnProperty;
+// biggest valid array index (2^32 - 2)
+var MAX_ARRAY_INDEX = 4294967294;
 exports.JsonPatchError = helpers_js_1.PatchError;
 exports.deepClone = helpers_js_1._deepClone;
 /* We use a Javascript hash to store each
@@ -430,12 +530,13 @@ var objOps = {
         if (removed) {
             removed = helpers_js_1._deepClone(removed);
         }
-        var originalValue = applyOperation(document, { op: "remove", path: this.from }).removed;
+        // `_from` makes an array element that cannot be found an error instead of a silent no-op
+        var originalValue = applyOperation(document, { op: "remove", path: this.from, _from: true }).removed;
         applyOperation(document, { op: "add", path: this.path, value: originalValue });
         return { newDocument: document, removed: removed };
     },
     copy: function (obj, key, document) {
-        var valueToCopy = getValueByPointer(document, this.from);
+        var valueToCopy = getValueByPointer(document, this.from, true);
         // enforce copy by value so further operations don't affect source (see issue #177)
         applyOperation(document, { op: "add", path: this.path, value: helpers_js_1._deepClone(valueToCopy) });
         return { newDocument: document };
@@ -499,11 +600,15 @@ var arrOps = {
  * @param pointer an escaped JSON pointer
  * @return The retrieved value
  */
-function getValueByPointer(document, pointer) {
+function getValueByPointer(document, pointer, isFrom) {
+    if (isFrom === void 0) { isFrom = false; }
     if (pointer == '') {
         return document;
     }
     var getOriginalDestination = { op: "_get", path: pointer };
+    if (isFrom) {
+        getOriginalDestination._from = true; // see objOps.move
+    }
     applyOperation(document, getOriginalDestination);
     return getOriginalDestination.value;
 }
@@ -551,7 +656,7 @@ function applyOperation(document, operation, validateOperation, mutateDocument, 
             return returnValue;
         }
         else if (operation.op === 'move' || operation.op === 'copy') { // it's a move or copy to root
-            returnValue.newDocument = getValueByPointer(document, operation.from); // get the value by json-pointer in `from` field
+            returnValue.newDocument = getValueByPointer(document, operation.from, true); // get the value by json-pointer in `from` field
             if (operation.op === 'move') { // report removed item
                 returnValue.removed = document;
             }
@@ -584,10 +689,16 @@ function applyOperation(document, operation, validateOperation, mutateDocument, 
         }
     } /* END ROOT OPERATIONS */
     else {
+        if (typeof operation.path !== 'string') {
+            throw new exports.JsonPatchError('Operation `path` property is not a string', 'OPERATION_PATH_INVALID', index, operation, document);
+        }
+        if (!_hasOwnProperty.call(objOps, operation.op)) {
+            throw new exports.JsonPatchError('Operation `op` property is not one of operations defined in RFC-6902', 'OPERATION_OP_INVALID', index, operation, document);
+        }
         if (!mutateDocument) {
             document = helpers_js_1._deepClone(document);
         }
-        var path = operation.path || "";
+        var path = operation.path;
         var keys = path.split('/');
         var obj = document;
         var t = 1; //skip empty element - http://jsperf.com/to-shift-or-not-to-shift
@@ -631,49 +742,68 @@ function applyOperation(document, operation, validateOperation, mutateDocument, 
                 }
                 else {
                     var indexById = key.indexOf(':') !== -1;
-                    if (validateOperation && !helpers_js_1.isInteger(key) && !indexById) {
+                    // true when the key cannot address any element of this array
+                    var notFound = false;
+                    if (key === '') {
+                        notFound = true; // an empty segment is not the index 0
+                    }
+                    else if (validateOperation && !helpers_js_1.isInteger(key) && !indexById) {
                         throw new exports.JsonPatchError("Expected an unsigned base-10 integer value, making the new referenced value the array element with the zero-based index", "OPERATION_PATH_ILLEGAL_ARRAY_INDEX", index, operation, document);
                     } // only parse key when it's an integer for `arr.prop` to work
                     else if (helpers_js_1.isInteger(key)) {
-                        key = ~~key;
+                        // ~~ wraps around above 2^31 (e.g. ~~'4294967295' === -1), so it is only used for short keys
+                        key = key.length < 10 ? ~~key : Number(key);
+                        if (key > MAX_ARRAY_INDEX) {
+                            notFound = true;
+                        }
                     }
                     else if (indexById) {
-                        // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
-                        var parts = key.split(':');
-                        var keyName = parts[0];
-                        var keyValue = parts[1];
+                        var idKey = helpers_js_1.splitIdKey(key);
+                        var keyName = idKey.keyName;
+                        var keyValue = idKey.keyValue;
                         var found = false;
                         if (arraysMaps && keyName) {
                             var fullPath = keys.slice(0, t - 1).join('/');
                             var arrayMap = arraysMaps[fullPath];
                             if (!arrayMap) {
-                                arrayMap = obj.reduce(function (acc, item, index) {
-                                    acc[item[keyName]] = { item: item, index: index };
-                                    return acc;
-                                }, {});
+                                arrayMap = Object.create(null);
+                                for (var i = 0; i < obj.length; i++) {
+                                    var item = obj[i];
+                                    var itemKey = item == null ? undefined : helpers_js_1.toString(item[keyName]);
+                                    // the first element wins, as it does when scanning the array
+                                    if (itemKey !== undefined && arrayMap[itemKey] === undefined) {
+                                        arrayMap[itemKey] = { item: item, index: i };
+                                    }
+                                }
                                 arraysMaps[fullPath] = arrayMap;
                             }
                             var wrapper = arrayMap[keyValue];
                             if (wrapper) {
                                 // check if the item is still in the same position on the array and has the same key value
                                 var itemFromArray = obj[wrapper.index];
-                                if (itemFromArray && helpers_js_1.isEquals(itemFromArray[keyName], keyValue)) {
+                                if (itemFromArray != null && helpers_js_1.toString(itemFromArray[keyName]) === keyValue) {
                                     key = wrapper.index;
                                     found = true;
                                 }
                             }
                         }
                         if (!found) {
-                            key = obj.findIndex(function (el) { return (keyName == null || keyName.length == 0) ? el == keyValue : helpers_js_1.isEquals(el[keyName], keyValue); });
+                            key = helpers_js_1.findIndexByIdKey(obj, keyName, keyValue);
                         }
                         if (key === -1) {
-                            // id not found: never fall through to splice(-1, 1) / arr[-1], which would hit the last item
-                            if (t >= len && !validateOperation && operation.op === 'remove') {
-                                return { newDocument: document }; // already gone: idempotent no-op
-                            }
-                            if (t < len || validateOperation || operation.op !== '_get') {
-                                throw new exports.JsonPatchError('Cannot perform the operation at a path that does not exist', 'OPERATION_PATH_UNRESOLVABLE', index, operation, document);
-                            }
+                            notFound = true;
+                        }
+                    }
+                    if (notFound) {
+                        // never fall through to splice(-1, 1) / arr[-1] / arr[''], which would hit the wrong item
+                        if (operation._from) {
+                            throw new exports.JsonPatchError('Cannot perform the operation from a path that does not exist', 'OPERATION_FROM_UNRESOLVABLE', index, operation, document);
+                        }
+                        if (t >= len && !validateOperation && operation.op === 'remove') {
+                            return { newDocument: document }; // already gone: idempotent no-op
+                        }
+                        if (t < len || validateOperation || operation.op !== '_get') {
+                            throw new exports.JsonPatchError('Cannot perform the operation at a path that does not exist', 'OPERATION_PATH_UNRESOLVABLE', index, operation, document);
                         }
                     }
                 }
@@ -698,9 +828,14 @@ function applyOperation(document, operation, validateOperation, mutateDocument, 
                 }
             }
             obj = obj[key];
+            // A JSON document has no functions: reaching one means the path is walking the prototype chain
+            // (e.g. `/constructor/keys` would end up writing to the global `Object`).
+            if (banPrototypeModifications && typeof obj === 'function') {
+                throw new TypeError('JSON-Patch: modifying `__proto__` or `constructor/prototype` prop is banned for security reasons, if this was on purpose, please set `banPrototypeModifications` flag false and pass it to this function. More info in fast-json-patch README');
+            }
             // If we have more keys in the path, but the next value isn't a non-null object,
             // throw an OPERATION_PATH_UNRESOLVABLE error instead of iterating again.
-            if (validateOperation && t < len && (!obj || typeof obj !== "object")) {
+            if (t < len && (obj == null || (validateOperation && typeof obj !== "object"))) {
                 throw new exports.JsonPatchError('Cannot perform operation at the desired path', 'OPERATION_PATH_UNRESOLVABLE', index, operation, document);
             }
         }
@@ -773,7 +908,7 @@ function validator(operation, index, document, existingPathFragment) {
     if (typeof operation !== 'object' || operation === null || Array.isArray(operation)) {
         throw new exports.JsonPatchError('Operation is not an object', 'OPERATION_NOT_AN_OBJECT', index, operation, document);
     }
-    else if (!objOps[operation.op]) {
+    else if (!_hasOwnProperty.call(objOps, operation.op)) {
         throw new exports.JsonPatchError('Operation `op` property is not one of operations defined in RFC-6902', 'OPERATION_OP_INVALID', index, operation, document);
     }
     else if (typeof operation.path !== 'string') {
@@ -887,7 +1022,7 @@ function _areEquals(a, b) {
         if (length !== Object.keys(b).length)
             return false;
         for (i = length; i-- !== 0;)
-            if (!b.hasOwnProperty(keys[i]))
+            if (!_hasOwnProperty.call(b, keys[i]))
                 return false;
         for (i = length; i-- !== 0;) {
             key = keys[i];
@@ -1028,7 +1163,7 @@ function generate(observer, invertible, idFieldNames) {
     var mirror = beforeDict.get(observer.object);
     _generate(mirror.value, observer.object, observer.patches, "", invertible, idFieldNames);
     if (observer.patches.length) {
-        core_js_1.applyPatch(mirror.value, observer.patches);
+        core_js_1.applyPatch(mirror.value, observer.patches, false, true, true, idFieldNames);
     }
     var temp = observer.patches;
     if (temp.length > 0) {
@@ -1048,6 +1183,14 @@ function _generate(mirror, obj, patches, path, invertible, idFieldNames) {
     }
     if (typeof obj.toJSON === "function") {
         obj = obj.toJSON();
+    }
+    if (Array.isArray(mirror) !== Array.isArray(obj)) {
+        // array <-> object: nothing to diff key by key, replace the whole value once
+        if (invertible) {
+            patches.push({ op: "test", path: path, value: helpers_js_1._deepClone(mirror) });
+        }
+        patches.push({ op: "replace", path: path, value: helpers_js_1._deepClone(obj) });
+        return;
     }
     var newKeys = helpers_js_1._objectKeys(obj, idFieldNames);
     var oldKeys = helpers_js_1._objectKeys(mirror, idFieldNames);
@@ -1069,7 +1212,7 @@ function _generate(mirror, obj, patches, path, invertible, idFieldNames) {
                 _generate(oldVal, newVal, patches, path + "/" + helpers_js_1.escapePathComponent(key), invertible, idFieldNames);
             }
             else {
-                if (!helpers_js_1.isEquals(oldVal, newVal)) {
+                if (!helpers_js_1.isSameValue(oldVal, newVal)) {
                     changed = true;
                     if (invertible) {
                         patches.push({ op: "test", path: path + "/" + helpers_js_1.escapePathComponent(key), value: helpers_js_1._deepClone(oldVal) });

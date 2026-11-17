@@ -2189,3 +2189,215 @@ describe('duplex', function() {
     expect(patches).toReallyEqual([{ op: 'replace', path: '/start', value: '2023-02-04T00:00:00.000Z' }]);
   });
 });
+
+describe('audit regressions - generating patches', function () {
+    const clone = (value) => JSON.parse(JSON.stringify(value));
+    // compares `from` with `to`, applies the patch on a copy of `from` and returns both
+    const roundTrip = (from, to, idFieldNames) => {
+        const patches = jsonpatch.compare(from, to, false, idFieldNames);
+        const result = clone(from);
+        jsonpatch.applyPatch(result, clone(patches), false, true, true, idFieldNames);
+        return {patches, result};
+    };
+    // arrays are compared ignoring the order of their elements
+    const sortById = (arr) => arr.slice().sort((a, b) => JSON.stringify(a) < JSON.stringify(b) ? -1 : 1);
+    const observeAndGenerate = (doc, mutate, idFieldNames) => {
+        const observer = jsonpatch.observe(doc, undefined, idFieldNames);
+        mutate(doc);
+        const first = jsonpatch.generate(observer, false, idFieldNames);
+        const second = jsonpatch.generate(observer, false, idFieldNames);
+        jsonpatch.unobserve(doc, observer);
+        return {first, second};
+    };
+
+    describe('value changes are compared strictly', function () {
+        [[1, '1'], [false, 0], ['', false], [true, 1], [0, ''], [[1], 1], ['1', 1], [null, 0], [null, false], [null, '']].forEach(function (pair) {
+            it(JSON.stringify(pair[0]) + ' -> ' + JSON.stringify(pair[1]) + ' generates a replace', function () {
+                const patches = jsonpatch.compare({a: pair[0]}, {a: pair[1]});
+                expect(patches).toEqual([{op: 'replace', path: '/a', value: pair[1]}]);
+            });
+        });
+
+        it('equal values generate nothing', function () {
+            expect(jsonpatch.compare({a: 1, b: 's', c: null, d: false, e: NaN}, {a: 1, b: 's', c: null, d: false, e: NaN})).toEqual([]);
+        });
+
+        it('a value with an "equals" property that is not a function does not break', function () {
+            expect(jsonpatch.compare({a: {equals: 1}}, {a: 'x'})).toEqual([{op: 'replace', path: '/a', value: 'x'}]);
+            expect(jsonpatch.compare({a: 'x'}, {a: {equals: 1}})).toEqual([{op: 'replace', path: '/a', value: {equals: 1}}]);
+        });
+
+        it('an object exposing equals() is equal to its serialized form, on both sides', function () {
+            class Id {
+                constructor(v) { this.v = v; }
+                equals(other) { return (other instanceof Id ? other.v : other) === this.v; }
+                toJSON() { return this.v; }
+            }
+            expect(jsonpatch.compare({a: 'aa'}, {a: new Id('aa')})).toEqual([]);
+            expect(jsonpatch.compare({a: new Id('aa')}, {a: 'aa'})).toEqual([]);
+            expect(jsonpatch.compare({a: 'aa'}, {a: new Id('bb')})).toEqual([{op: 'replace', path: '/a', value: 'bb'}]);
+        });
+
+        it('observe/generate detects a type change', function () {
+            const {first, second} = observeAndGenerate({a: 1}, d => { d.a = '1'; });
+            expect(first).toEqual([{op: 'replace', path: '/a', value: '1'}]);
+            expect(second).toEqual([]);
+        });
+    });
+
+    describe('ids containing ":", "/" or "~"', function () {
+        it('round trip of replace and remove', function () {
+            const from = {r: [{_id: 'u', n: 0}, {_id: 'u:1', n: 1}, {_id: 'a/b~c:2', n: 2}, {_id: 'u:3', n: 3}]};
+            const to = {r: [{_id: 'u', n: 0}, {_id: 'a/b~c:2', n: 20}, {_id: 'u:3', n: 3}]};
+            const {patches, result} = roundTrip(from, to);
+            expect(patches).toEqual([
+                {op: 'replace', path: '/r/_id:a~1b~0c:2/n', value: 20},
+                {op: 'remove', path: '/r/_id:u:1'}
+            ]);
+            expect(result).toEqual(to);
+        });
+
+        it('round trip of primitives', function () {
+            const {patches, result} = roundTrip({r: ['a', 'a:c', 'x/y']}, {r: ['a']});
+            expect(patches).toEqual([{op: 'remove', path: '/r/:x~1y'}, {op: 'remove', path: '/r/:a:c'}]);
+            expect(result).toEqual({r: ['a']});
+        });
+
+        it('observe/generate does not emit the same patch twice', function () {
+            const doc = {r: [{_id: 'u:1', n: 1}, {_id: 'u:2', n: 2}]};
+            const {first, second} = observeAndGenerate(doc, d => { d.r[1].n = 9; d.r.splice(0, 1); });
+            expect(first).toEqual([{op: 'replace', path: '/r/_id:u:2/n', value: 9}, {op: 'remove', path: '/r/_id:u:1'}]);
+            expect(second).toEqual([]);
+        });
+    });
+
+    describe('falsy ids', function () {
+        it('_id 0 identifies the element, so reordering generates nothing', function () {
+            const from = {r: [{_id: 0, n: 1}, {_id: 5, n: 2}]};
+            expect(jsonpatch.compare(from, {r: [{_id: 5, n: 2}, {_id: 0, n: 1}]})).toEqual([]);
+        });
+
+        it('_id 0 is used in the path', function () {
+            const {patches, result} = roundTrip({r: [{_id: 0, n: 1}, {_id: 5, n: 2}]}, {r: [{_id: 5, n: 2}, {_id: 0, n: 7}]});
+            expect(patches).toEqual([{op: 'replace', path: '/r/_id:0/n', value: 7}]);
+            expect(result.r).toEqual([{_id: 0, n: 7}, {_id: 5, n: 2}]);
+        });
+
+        it('null and empty string ids are not ids: the element is addressed by index', function () {
+            const {patches, result} = roundTrip({r: [{_id: null, n: 1}, {_id: '', n: 2}]}, {r: [{_id: null, n: 3}, {_id: '', n: 2}]});
+            expect(patches).toEqual([{op: 'replace', path: '/r/0/n', value: 3}]);
+            expect(result.r[0].n).toEqual(3);
+        });
+    });
+
+    describe('arrays mixing elements with and without id', function () {
+        it('does not diff an element without id against an element with id', function () {
+            const from = {r: [{n: 1}, {_id: 'a'}]};
+            const to = {r: [{_id: 'a'}, {n: 1}]};
+            const {patches, result} = roundTrip(from, to);
+            expect(patches).toEqual([{op: 'remove', path: '/r/0'}, {op: 'add', path: '/r/-', value: {n: 1}}]);
+            expect(result).toEqual(to);
+        });
+
+        it('round trip with null elements', function () {
+            const from = {r: [null, {_id: 'a', n: 1}, {_id: 'b', n: 2}]};
+            const to = {r: [null, {_id: 'b', n: 3}]};
+            const {patches, result} = roundTrip(from, to);
+            expect(patches).toEqual([{op: 'replace', path: '/r/_id:b/n', value: 3}, {op: 'remove', path: '/r/_id:a'}]);
+            expect(result).toEqual(to);
+        });
+
+        it('observe/generate with null elements', function () {
+            const {first, second} = observeAndGenerate({r: [null, {_id: 'a'}]}, d => { d.r.pop(); });
+            expect(first).toEqual([{op: 'remove', path: '/r/_id:a'}]);
+            expect(second).toEqual([]);
+        });
+
+        it('arrays of objects without id are still compared by index', function () {
+            const {patches, result} = roundTrip({r: [{n: 1}, {n: 2}, {n: 3}]}, {r: [{n: 1}, {n: 20}]});
+            expect(patches).toEqual([{op: 'remove', path: '/r/2'}, {op: 'replace', path: '/r/1/n', value: 20}]);
+            expect(result).toEqual({r: [{n: 1}, {n: 20}]});
+        });
+    });
+
+    describe('root type change', function () {
+        it('array -> object generates one replace', function () {
+            expect(jsonpatch.compare([1, 2], {a: 1})).toEqual([{op: 'replace', path: '', value: {a: 1}}]);
+            expect(jsonpatch.compare([], {a: 1})).toEqual([{op: 'replace', path: '', value: {a: 1}}]);
+        });
+
+        it('object -> array generates one replace', function () {
+            expect(jsonpatch.compare({a: 1, b: 2}, [1])).toEqual([{op: 'replace', path: '', value: [1]}]);
+            expect(jsonpatch.compare({}, [1])).toEqual([{op: 'replace', path: '', value: [1]}]);
+        });
+
+        it('invertible', function () {
+            expect(jsonpatch.compare([1], {a: 1}, true)).toEqual([
+                {op: 'test', path: '', value: [1]},
+                {op: 'replace', path: '', value: {a: 1}}
+            ]);
+        });
+
+        it('the patch produces the new document', function () {
+            const patches = jsonpatch.compare([1, 2], {a: 1});
+            expect(jsonpatch.applyPatch([1, 2], patches).newDocument).toEqual({a: 1});
+        });
+    });
+
+    describe('custom idFieldNames', function () {
+        const idFieldNames = ['uid', 'code'];
+
+        it('compare uses the first id field found in each element', function () {
+            const from = {r: [{uid: 1, n: 1}, {code: 'c', n: 2}, {uid: 3, n: 3}]};
+            const to = {r: [{code: 'c', n: 20}, {uid: 1, n: 1}, {uid: 4, n: 4}]};
+            const {patches, result} = roundTrip(from, to, idFieldNames);
+            expect(patches).toEqual([
+                {op: 'remove', path: '/r/uid:3'},
+                {op: 'replace', path: '/r/code:c/n', value: 20},
+                {op: 'add', path: '/r/-', value: {uid: 4, n: 4}}
+            ]);
+            expect(sortById(result.r)).toEqual(sortById(to.r));
+        });
+
+        it('observe/generate keeps its mirror in sync', function () {
+            const doc = {r: [{uid: 1, n: 1}]};
+            const observer = jsonpatch.observe(doc, undefined, idFieldNames);
+            doc.r.push({uid: 2, n: 2});
+            expect(jsonpatch.generate(observer, false, idFieldNames)).toEqual([{op: 'add', path: '/r/-', value: {uid: 2, n: 2}}]);
+            doc.r[1].n = 3;
+            expect(jsonpatch.generate(observer, false, idFieldNames)).toEqual([{op: 'replace', path: '/r/uid:2/n', value: 3}]);
+            doc.r.shift();
+            expect(jsonpatch.generate(observer, false, idFieldNames)).toEqual([{op: 'remove', path: '/r/uid:1'}]);
+            expect(jsonpatch.generate(observer, false, idFieldNames)).toEqual([]);
+            jsonpatch.unobserve(doc, observer);
+        });
+    });
+
+    describe('documented fork semantics', function () {
+        it('arrays of primitives are sets: duplicates and order generate nothing', function () {
+            expect(jsonpatch.compare({r: ['a']}, {r: ['a', 'a']})).toEqual([]);
+            expect(jsonpatch.compare({r: [1, 1, 2]}, {r: [1, 2]})).toEqual([]);
+            expect(jsonpatch.compare({r: [1, 2]}, {r: [2, 1]})).toEqual([]);
+        });
+
+        it('arrays of primitives: added and removed values', function () {
+            const {patches, result} = roundTrip({r: [1, 2, 3]}, {r: [3, 4, 1]});
+            expect(patches).toEqual([{op: 'remove', path: '/r/:2'}, {op: 'add', path: '/r/-', value: 4}]);
+            expect(result.r).toEqual([1, 3, 4]);
+        });
+
+        it('falsy primitives are tracked by value', function () {
+            const {patches, result} = roundTrip({r: [0, '', false, 1]}, {r: [1, false]});
+            expect(patches).toEqual([{op: 'remove', path: '/r/:'}, {op: 'remove', path: '/r/:0'}]);
+            expect(result.r).toEqual([false, 1]);
+        });
+    });
+
+    describe('BigInt', function () {
+        it('compare does not throw on nested BigInt values', function () {
+            const patches = jsonpatch.compare({}, {a: {n: BigInt(1)}});
+            expect(patches.length).toEqual(1);
+            expect(patches[0].value.n).toBe(BigInt(1));
+        });
+    });
+});

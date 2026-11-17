@@ -11,8 +11,28 @@
  * isEquals() resolve essa questão.
  */
 export declare function isEquals(id1: any, id2: any): boolean;
+/**
+ * Compares two document values when generating a diff. <br>
+ * Unlike isEquals(), it does not use loose equality: 1 and '1', false and 0, '' and false are different values. <br>
+ * null and undefined are equivalent, and an object exposing equals() (e.g. ObjectId) can match its serialized form.
+ */
+export declare function isSameValue(a: any, b: any): boolean;
 export declare function hasSamePropertyValue(obj1: any, obj2: any, propertyName: string): boolean;
 export declare function toString(value: any): string;
+/**
+ * Splits an array key like '_id:abc' into its field name and value. <br>
+ * Only the first ':' is a separator, so the value itself may contain ':' (e.g. '_id:user:123'). <br>
+ * A key like ':abc' (empty name) addresses a primitive element by its value.
+ */
+export declare function splitIdKey(key: string): {
+    keyName: string;
+    keyValue: string;
+};
+/**
+ * Finds the index of the array element addressed by keyName/keyValue (see splitIdKey).
+ * Returns -1 when there is no such element.
+ */
+export declare function findIndexByIdKey(arr: any[], keyName: string, keyValue: string): number;
 export declare function getValue(obj: any, key: any, document?: any, objMap?: any): any;
 export declare function hasOwnProperty(obj: any, key: any, objMap?: any): any;
 export declare function _objectKeys(obj: any, idFieldNames?: string[]): {

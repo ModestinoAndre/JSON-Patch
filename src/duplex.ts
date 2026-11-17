@@ -3,7 +3,7 @@
  * (c) 2017-2021 Joachim Wester
  * MIT license
  */
-import { isEquals, _deepClone, getValue, _objectKeys, escapePathComponent, hasOwnProperty } from './helpers.js';
+import { isSameValue, _deepClone, getValue, _objectKeys, escapePathComponent, hasOwnProperty } from './helpers.js';
 import { applyPatch, Operation } from './core.js';
 
 export interface Observer<T> {
@@ -127,7 +127,7 @@ export function generate<T>(observer: Observer<Object>, invertible = false, idFi
 
   _generate(mirror.value, observer.object, observer.patches, "", invertible, idFieldNames);
   if (observer.patches.length) {
-    applyPatch(mirror.value, observer.patches);
+    applyPatch(mirror.value, observer.patches, false, true, true, idFieldNames);
   }
   var temp = observer.patches;
   if (temp.length > 0) {
@@ -147,6 +147,15 @@ function _generate(mirror, obj, patches, path, invertible, idFieldNames  = ['_id
 
   if (typeof obj.toJSON === "function") {
     obj = obj.toJSON();
+  }
+
+  if (Array.isArray(mirror) !== Array.isArray(obj)) {
+    // array <-> object: nothing to diff key by key, replace the whole value once
+    if (invertible) {
+      patches.push({ op: "test", path, value: _deepClone(mirror) });
+    }
+    patches.push({ op: "replace", path, value: _deepClone(obj) });
+    return;
   }
 
   var newKeys = _objectKeys(obj, idFieldNames);
@@ -171,7 +180,7 @@ function _generate(mirror, obj, patches, path, invertible, idFieldNames  = ['_id
         _generate(oldVal, newVal, patches, path + "/" + escapePathComponent(key), invertible, idFieldNames);
       }
       else {
-        if (!isEquals(oldVal, newVal)) {
+        if (!isSameValue(oldVal, newVal)) {
           changed = true;
           if (invertible) {
             patches.push({ op: "test", path: path + "/" + escapePathComponent(key), value: _deepClone(oldVal) });

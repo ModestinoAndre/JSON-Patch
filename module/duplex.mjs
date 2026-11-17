@@ -3,7 +3,7 @@
  * (c) 2017-2021 Joachim Wester
  * MIT license
  */
-import { isEquals, _deepClone, getValue, _objectKeys, escapePathComponent, hasOwnProperty } from './helpers.mjs';
+import { isSameValue, _deepClone, getValue, _objectKeys, escapePathComponent, hasOwnProperty } from './helpers.mjs';
 import { applyPatch } from './core.mjs';
 var beforeDict = new WeakMap();
 var Mirror = /** @class */ (function () {
@@ -100,7 +100,7 @@ export function generate(observer, invertible, idFieldNames) {
     var mirror = beforeDict.get(observer.object);
     _generate(mirror.value, observer.object, observer.patches, "", invertible, idFieldNames);
     if (observer.patches.length) {
-        applyPatch(mirror.value, observer.patches);
+        applyPatch(mirror.value, observer.patches, false, true, true, idFieldNames);
     }
     var temp = observer.patches;
     if (temp.length > 0) {
@@ -119,6 +119,14 @@ function _generate(mirror, obj, patches, path, invertible, idFieldNames) {
     }
     if (typeof obj.toJSON === "function") {
         obj = obj.toJSON();
+    }
+    if (Array.isArray(mirror) !== Array.isArray(obj)) {
+        // array <-> object: nothing to diff key by key, replace the whole value once
+        if (invertible) {
+            patches.push({ op: "test", path: path, value: _deepClone(mirror) });
+        }
+        patches.push({ op: "replace", path: path, value: _deepClone(obj) });
+        return;
     }
     var newKeys = _objectKeys(obj, idFieldNames);
     var oldKeys = _objectKeys(mirror, idFieldNames);
@@ -140,7 +148,7 @@ function _generate(mirror, obj, patches, path, invertible, idFieldNames) {
                 _generate(oldVal, newVal, patches, path + "/" + escapePathComponent(key), invertible, idFieldNames);
             }
             else {
-                if (!isEquals(oldVal, newVal)) {
+                if (!isSameValue(oldVal, newVal)) {
                     changed = true;
                     if (invertible) {
                         patches.push({ op: "test", path: path + "/" + escapePathComponent(key), value: _deepClone(oldVal) });

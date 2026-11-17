@@ -21,17 +21,42 @@ export function isEquals(id1, id2) {
     if (id1 == null || id2 == null) {
         return false;
     }
-    if (typeof id1 === 'object' && 'equals' in id1) {
+    if (typeof id1 === 'object' && typeof id1.equals === 'function') {
         if (id1.equals(id2)) {
             return true;
         }
     }
-    if (typeof id2 === 'object' && 'equals' in id2) {
+    if (typeof id2 === 'object' && typeof id2.equals === 'function') {
         if (id2.equals(id1)) {
             return true;
         }
     }
     return false;
+}
+
+/**
+ * Compares two document values when generating a diff. <br>
+ * Unlike isEquals(), it does not use loose equality: 1 and '1', false and 0, '' and false are different values. <br>
+ * null and undefined are equivalent, and an object exposing equals() (e.g. ObjectId) can match its serialized form.
+ */
+export function isSameValue(a, b) {
+    if (a === b) {
+        return true;
+    }
+    if (a == null || b == null) {
+        return a == null && b == null;
+    }
+    if (typeof a === 'object' && typeof a.equals === 'function') {
+        if (a.equals(b)) {
+            return true;
+        }
+    }
+    if (typeof b === 'object' && typeof b.equals === 'function') {
+        if (b.equals(a)) {
+            return true;
+        }
+    }
+    return a !== a && b !== b; // NaN
 }
 
 export function hasSamePropertyValue(obj1: any, obj2: any, propertyName: string): boolean {
@@ -62,33 +87,68 @@ export function toString(value: any): string {
     return String(value);
 }
 
+/**
+ * Splits an array key like '_id:abc' into its field name and value. <br>
+ * Only the first ':' is a separator, so the value itself may contain ':' (e.g. '_id:user:123'). <br>
+ * A key like ':abc' (empty name) addresses a primitive element by its value.
+ */
+export function splitIdKey(key: string): { keyName: string, keyValue: string } {
+    const pos = key.indexOf(':');
+    return { keyName: key.substring(0, pos), keyValue: key.substring(pos + 1) };
+}
+
+function isSameId(id: any, keyValue: string): boolean {
+    if (id == null) {
+        return false;
+    }
+    if (typeof id === 'string') {
+        return id === keyValue;
+    }
+    if (toString(id) === keyValue) {
+        return true;
+    }
+    return typeof id === 'object' && typeof id.equals === 'function' && !!id.equals(keyValue);
+}
+
+/**
+ * Finds the index of the array element addressed by keyName/keyValue (see splitIdKey).
+ * Returns -1 when there is no such element.
+ */
+export function findIndexByIdKey(arr: any[], keyName: string, keyValue: string): number {
+    if (keyName == null || keyName.length == 0) {
+        return arr.findIndex(el => {
+            const type = typeof el;
+            return (type === 'string' || type === 'number' || type === 'boolean' || type === 'bigint') && String(el) === keyValue;
+        });
+    }
+    return arr.findIndex(el => el != null && isSameId(el[keyName], keyValue));
+}
+
 export function getValue(obj: any, key: any, document: any = undefined, objMap?: any): any {
-    if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
-        // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
-        if (objMap && objMap[key]) {
-            return objMap[key];
+    if (Array.isArray(obj)) {
+        if (objMap) {
+            // the map has every key of the array, so there is no need to scan it
+            return _hasOwnProperty.call(objMap, key) ? objMap[key] : undefined;
         }
-        var parts = key.split(':');
-        var keyName = parts[0];
-        var keyValue = parts[1];
-        var index = obj.findIndex(el => (keyName == null || keyName.length == 0) ? el == keyValue : isEquals(el[keyName], keyValue));
-        return index === -1 ? undefined : obj[index];
+        if (typeof key === 'string' && key.indexOf(':') !== -1) {
+            const idKey = splitIdKey(key);
+            const index = findIndexByIdKey(obj, idKey.keyName, idKey.keyValue);
+            return index === -1 ? undefined : obj[index];
+        }
     }
     return obj[key];
 }
 
 const _hasOwnProperty = Object.prototype.hasOwnProperty;
 export function hasOwnProperty(obj, key, objMap?: any) {
-    if (Array.isArray(obj) && typeof key === 'string' && key.indexOf(':') !== -1) {
-        // const [keyName, keyValue] = key.split(':'); // do not work in older browsers
-        if (objMap && objMap[key]) {
-            return true;
+    if (Array.isArray(obj)) {
+        if (objMap) {
+            return _hasOwnProperty.call(objMap, key);
         }
-        var parts = key.split(':');
-        var keyName = parts[0];
-        var keyValue = parts[1];
-        var index = obj.findIndex(el => (keyName == null || keyName.length == 0) ? el == keyValue : isEquals(el[keyName], keyValue));
-        return index !== -1;
+        if (typeof key === 'string' && key.indexOf(':') !== -1) {
+            const idKey = splitIdKey(key);
+            return findIndexByIdKey(obj, idKey.keyName, idKey.keyValue) !== -1;
+        }
     }
     return _hasOwnProperty.call(obj, key);
 }
@@ -104,7 +164,8 @@ export function _objectKeys(obj, idFieldNames  = ['_id']): { keys: string[], map
             let key = "" + k;
             let el = obj[key];
             if (el != null) {
-                const idFN = idFieldNames.find(idField => !!el[idField]);
+                // 0 is a valid id; only null, undefined and '' mean "no id"
+                const idFN = typeof el === 'object' ? idFieldNames.find(idField => el[idField] != null && el[idField] !== '') : undefined;
                 if (idFN) {
                     const complexKey = idFN + ':' + toString(el[idFN]);
                     result.keys[k] = complexKey;
@@ -113,6 +174,9 @@ export function _objectKeys(obj, idFieldNames  = ['_id']): { keys: string[], map
                     const complexKey = ':' + el;
                     result.keys[k] = complexKey;
                     result.map[complexKey] = el;
+                    // also reachable by position, so an element without id on the other side (e.g. null)
+                    // is compared with the primitive that took its place
+                    result.map[key] = el;
                 } else {
                     result.keys[k] = key;
                     result.map[key] = el;
@@ -146,12 +210,45 @@ export function _objectKeys(obj, idFieldNames  = ['_id']): { keys: string[], map
 export function _deepClone(obj) {
     switch (typeof obj) {
         case "object":
-            return JSON.parse(JSON.stringify(obj)); //Faster than ES5 clone - http://jsperf.com/deep-cloning-of-objects/5
+            try {
+                return JSON.parse(JSON.stringify(obj)); //Faster than ES5 clone - http://jsperf.com/deep-cloning-of-objects/5
+            } catch (e) {
+                if (e instanceof TypeError && /BigInt/i.test(e.message)) {
+                    return _deepCloneKeepingBigInt(obj); // JSON cannot serialize BigInt
+                }
+                throw e;
+            }
         case "undefined":
             return null; //this is how JSON.stringify behaves for array items
         default:
             return obj; //no need to clone primitives
     }
+}
+// Same result as JSON.parse(JSON.stringify(obj)), but keeps BigInt values
+function _deepCloneKeepingBigInt(obj) {
+    if (obj === null || typeof obj !== 'object') {
+        return obj;
+    }
+    if (typeof obj.toJSON === 'function') {
+        return _deepCloneKeepingBigInt(obj.toJSON());
+    }
+    if (Array.isArray(obj)) {
+        const arr = new Array(obj.length);
+        for (let i = 0; i < obj.length; i++) {
+            const el = obj[i];
+            arr[i] = (el === undefined || typeof el === 'function' || typeof el === 'symbol') ? null : _deepCloneKeepingBigInt(el);
+        }
+        return arr;
+    }
+    const clone = {};
+    const keys = Object.keys(obj);
+    for (let i = 0; i < keys.length; i++) {
+        const value = obj[keys[i]];
+        if (value !== undefined && typeof value !== 'function' && typeof value !== 'symbol') {
+            clone[keys[i]] = _deepCloneKeepingBigInt(value);
+        }
+    }
+    return clone;
 }
 //3x faster than cached /^\d+$/.test(str)
 export function isInteger(str: string): boolean {

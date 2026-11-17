@@ -2344,3 +2344,405 @@ describe('compare - index array by (otherId:value | :value), ', function () {
     });
 
 });
+describe('audit regressions - applying patches', function () {
+    const errorName = (fn) => {
+        try {
+            fn();
+        } catch (e) {
+            return e instanceof jsonpatch.JsonPatchError ? e.name : 'NOT_A_JSON_PATCH_ERROR: ' + e;
+        }
+        return 'DID_NOT_THROW';
+    };
+    const manyOps = (operation, count = 60) => {
+        const patches = [];
+        for (let i = 0; i < count; i++) {
+            patches.push(Object.assign({}, operation));
+        }
+        return patches;
+    };
+
+    describe('ids containing ":"', function () {
+        it('addresses the right element when one id is the prefix of another', function () {
+            const obj = {r: [{_id: 'u', n: 0}, {_id: 'u:2', n: 2}]};
+            jsonpatch.applyPatch(obj, [{op: 'replace', path: '/r/_id:u:2/n', value: 9}]);
+            expect(obj.r).toEqual([{_id: 'u', n: 0}, {_id: 'u:2', n: 9}]);
+        });
+
+        it('removes the right element', function () {
+            const obj = {r: [{_id: 'u:1'}, {_id: 'u:2'}, {_id: 'u:3'}]};
+            jsonpatch.applyPatch(obj, [{op: 'remove', path: '/r/_id:u:2'}]);
+            expect(obj.r).toEqual([{_id: 'u:1'}, {_id: 'u:3'}]);
+        });
+
+        it('works with validation on', function () {
+            const obj = {r: [{_id: 'u:1', n: 1}, {_id: 'u:2', n: 2}]};
+            jsonpatch.applyPatch(obj, [{op: 'replace', path: '/r/_id:u:2/n', value: 9}], true);
+            expect(obj.r[1].n).toEqual(9);
+        });
+
+        it('works in a big patch (arrays map)', function () {
+            const obj = {r: [{_id: 'u', n: 0}, {_id: 'u:2', n: 2}]};
+            jsonpatch.applyPatch(obj, manyOps({op: 'replace', path: '/r/_id:u:2/n', value: 9}));
+            expect(obj.r).toEqual([{_id: 'u', n: 0}, {_id: 'u:2', n: 9}]);
+        });
+
+        it('addresses primitive elements containing ":"', function () {
+            const obj = {r: ['a', 'a:c']};
+            jsonpatch.applyPatch(obj, [{op: 'remove', path: '/r/:a:c'}]);
+            expect(obj.r).toEqual(['a']);
+        });
+
+        it('getValueByPointer resolves them', function () {
+            const obj = {r: [{_id: 'u', n: 0}, {_id: 'u:2', n: 2}]};
+            expect(jsonpatch.getValueByPointer(obj, '/r/_id:u:2/n')).toEqual(2);
+        });
+    });
+
+    describe('id matching', function () {
+        it('matches a numeric id with the string in the path', function () {
+            const obj = {r: [{_id: 1}, {_id: 2}]};
+            jsonpatch.applyPatch(obj, [{op: 'remove', path: '/r/_id:2'}]);
+            expect(obj.r).toEqual([{_id: 1}]);
+        });
+
+        it('does not match by loose equality (true is not 1)', function () {
+            const obj = {r: [{_id: true}, {_id: 1}]};
+            jsonpatch.applyPatch(obj, [{op: 'remove', path: '/r/_id:1'}]);
+            expect(obj.r).toEqual([{_id: true}]);
+        });
+
+        it('does not match a primitive by loose equality', function () {
+            const obj = {r: [true, 1]};
+            jsonpatch.applyPatch(obj, [{op: 'remove', path: '/r/:1'}]);
+            expect(obj.r).toEqual([true]);
+        });
+
+        it('matches ids that expose equals() (ObjectId like)', function () {
+            class Id {
+                constructor(v) { this.v = v; }
+                equals(other) { return (other instanceof Id ? other.v : other) === this.v; }
+                toString() { return 'Id(' + this.v + ')'; }
+            }
+            const obj = {r: [{_id: new Id('aa'), n: 1}, {_id: new Id('bb'), n: 2}]};
+            jsonpatch.applyPatch(obj, [{op: 'replace', path: '/r/_id:bb/n', value: 9}]);
+            expect(obj.r[0].n).toEqual(1);
+            expect(obj.r[1].n).toEqual(9);
+        });
+
+        it('ignores an id whose "equals" property is not a function', function () {
+            const obj = {r: [{_id: {equals: 1}}, {_id: 'x'}]};
+            jsonpatch.applyPatch(obj, [{op: 'remove', path: '/r/_id:x'}]);
+            expect(obj.r).toEqual([{_id: {equals: 1}}]);
+        });
+
+        it('skips null and undefined elements', function () {
+            const obj = {r: [null, undefined, {_id: 'x'}, {_id: 'y'}]};
+            jsonpatch.applyPatch(obj, [{op: 'remove', path: '/r/_id:x'}]);
+            expect(obj.r).toEqual([null, undefined, {_id: 'y'}]);
+        });
+
+        it('skips null elements in a big patch (arrays map)', function () {
+            const obj = {r: [null, {_id: 'x', n: 0}]};
+            jsonpatch.applyPatch(obj, manyOps({op: 'replace', path: '/r/_id:x/n', value: 5}));
+            expect(obj.r).toEqual([null, {_id: 'x', n: 5}]);
+        });
+
+        it('with duplicated ids the first element wins, in small and big patches', function () {
+            const small = {r: [{_id: 1, n: 'a'}, {_id: 1, n: 'b'}]};
+            jsonpatch.applyPatch(small, [{op: 'replace', path: '/r/_id:1/n', value: 'z'}]);
+            const big = {r: [{_id: 1, n: 'a'}, {_id: 1, n: 'b'}]};
+            jsonpatch.applyPatch(big, manyOps({op: 'replace', path: '/r/_id:1/n', value: 'z'}));
+            expect(small.r).toEqual([{_id: 1, n: 'z'}, {_id: 1, n: 'b'}]);
+            expect(big.r).toEqual(small.r);
+        });
+
+        it('an id named like an Object.prototype member is handled in a big patch', function () {
+            const obj = {r: [{_id: '__proto__', n: 0}, {_id: 'constructor', n: 0}, {_id: 'b', n: 0}]};
+            const patches = manyOps({op: 'replace', path: '/r/_id:__proto__/n', value: 1}, 30)
+                .concat(manyOps({op: 'replace', path: '/r/_id:constructor/n', value: 2}, 30));
+            jsonpatch.applyPatch(obj, patches);
+            expect(obj.r).toEqual([{_id: '__proto__', n: 1}, {_id: 'constructor', n: 2}, {_id: 'b', n: 0}]);
+            expect(({}).item).toBeUndefined();
+            expect(({}).index).toBeUndefined();
+        });
+    });
+
+    describe('big patches (arrays map) give the same result as one operation at a time', function () {
+        it('mixing add, remove and replace on the same array', function () {
+            const makeDoc = () => {
+                const r = [];
+                for (let i = 0; i < 40; i++) {
+                    r.push({_id: 'id' + i, n: i});
+                }
+                return {r};
+            };
+            const patches = [];
+            for (let i = 0; i < 40; i++) {
+                if (i % 3 === 0) {
+                    patches.push({op: 'remove', path: '/r/_id:id' + i});
+                } else {
+                    patches.push({op: 'replace', path: '/r/_id:id' + i + '/n', value: i * 10});
+                }
+                patches.push({op: 'add', path: '/r/0', value: {_id: 'new' + i, n: -i}});
+                patches.push({op: 'replace', path: '/r/_id:new' + i + '/n', value: i});
+            }
+            patches.push({op: 'remove', path: '/r/_id:id0'}); // already removed
+            expect(patches.length).toBeGreaterThan(50);
+
+            const atOnce = makeDoc();
+            jsonpatch.applyPatch(atOnce, jsonpatch.deepClone(patches));
+            const oneByOne = makeDoc();
+            patches.forEach(p => jsonpatch.applyPatch(oneByOne, [jsonpatch.deepClone(p)]));
+
+            expect(atOnce).toEqual(oneByOne);
+            expect(atOnce.r.length).toEqual(40 - 14 + 40);
+        });
+    });
+
+    describe('array indexes that cannot address an element (without validation)', function () {
+        ['4294967295', '99999999999999999999', ''].forEach(function (segment) {
+            const path = '/r/' + segment;
+
+            it('remove ' + JSON.stringify(path) + ' is a no-op', function () {
+                const obj = {r: [1, 2, 3]};
+                jsonpatch.applyPatch(obj, [{op: 'remove', path}]);
+                expect(obj.r).toEqual([1, 2, 3]);
+            });
+
+            it('replace and add at ' + JSON.stringify(path) + ' throw and change nothing', function () {
+                const obj = {r: [1, 2, 3]};
+                expect(errorName(() => jsonpatch.applyPatch(obj, [{op: 'replace', path, value: 9}]))).toEqual('OPERATION_PATH_UNRESOLVABLE');
+                expect(errorName(() => jsonpatch.applyPatch(obj, [{op: 'add', path, value: 9}]))).toEqual('OPERATION_PATH_UNRESOLVABLE');
+                expect(obj.r).toEqual([1, 2, 3]);
+                expect(Object.keys(obj.r)).toEqual(['0', '1', '2']);
+            });
+
+            it('nested path through ' + JSON.stringify(path) + ' throws', function () {
+                const obj = {r: [{n: 1}, {n: 2}]};
+                expect(errorName(() => jsonpatch.applyPatch(obj, [{op: 'replace', path: path + '/n', value: 9}]))).toEqual('OPERATION_PATH_UNRESOLVABLE');
+                expect(obj.r).toEqual([{n: 1}, {n: 2}]);
+            });
+        });
+
+        it('replace beyond the end of the array throws instead of growing the array', function () {
+            ['3', '99', '2147483648', '4000000000'].forEach(function (segment) {
+                const obj = {r: [1, 2, 3]};
+                expect(errorName(() => jsonpatch.applyPatch(obj, [{op: 'replace', path: '/r/' + segment, value: 9}]))).toEqual('OPERATION_PATH_UNRESOLVABLE');
+                expect(obj.r.length).toEqual(3);
+                expect(obj.r).toEqual([1, 2, 3]);
+            });
+        });
+
+        it('remove and add beyond the end of the array do not grow it', function () {
+            const obj = {r: [1, 2, 3]};
+            jsonpatch.applyPatch(obj, [{op: 'remove', path: '/r/2147483648'}, {op: 'remove', path: '/r/99'}]);
+            expect(obj.r).toEqual([1, 2, 3]);
+            jsonpatch.applyPatch(obj, [{op: 'add', path: '/r/2147483648', value: 4}]);
+            expect(obj.r).toEqual([1, 2, 3, 4]);
+            expect(errorName(() => jsonpatch.applyPatch(obj, [{op: 'add', path: '/r/2147483648', value: 5}], true))).toEqual('OPERATION_VALUE_OUT_OF_BOUNDS');
+        });
+
+        it('a regular index still works, including leading zeros and a 9 digit index', function () {
+            const obj = {r: [1, 2, 3]};
+            jsonpatch.applyPatch(obj, [{op: 'remove', path: '/r/01'}]);
+            expect(obj.r).toEqual([1, 3]);
+            jsonpatch.applyPatch(obj, [{op: 'remove', path: '/r/123456789'}]);
+            expect(obj.r).toEqual([1, 3]);
+        });
+
+        it('an empty segment is rejected with validation on', function () {
+            const obj = {r: [1, 2, 3]};
+            expect(errorName(() => jsonpatch.applyPatch(obj, [{op: 'remove', path: '/r/'}], true))).toEqual('OPERATION_PATH_UNRESOLVABLE');
+            expect(obj.r).toEqual([1, 2, 3]);
+        });
+    });
+
+    describe('move and copy from an array element that does not exist', function () {
+        it('move throws and changes nothing', function () {
+            const obj = {r: [{_id: 'a'}], o: {}};
+            expect(errorName(() => jsonpatch.applyPatch(obj, [{op: 'move', from: '/r/_id:zz', path: '/o/k'}]))).toEqual('OPERATION_FROM_UNRESOLVABLE');
+            expect(obj).toEqual({r: [{_id: 'a'}], o: {}});
+            expect('k' in obj.o).toBe(false);
+        });
+
+        it('copy throws and changes nothing', function () {
+            const obj = {r: [{_id: 'a'}], o: {}};
+            expect(errorName(() => jsonpatch.applyPatch(obj, [{op: 'copy', from: '/r/_id:zz', path: '/o/k'}]))).toEqual('OPERATION_FROM_UNRESOLVABLE');
+            expect('k' in obj.o).toBe(false);
+        });
+
+        it('move and copy to the root throw', function () {
+            const obj = {r: [{_id: 'a'}]};
+            expect(errorName(() => jsonpatch.applyPatch(obj, [{op: 'move', from: '/r/_id:zz', path: ''}]))).toEqual('OPERATION_FROM_UNRESOLVABLE');
+            expect(errorName(() => jsonpatch.applyPatch(obj, [{op: 'copy', from: '/r/4294967295', path: ''}]))).toEqual('OPERATION_FROM_UNRESOLVABLE');
+        });
+
+        it('move and copy by id work when the element exists', function () {
+            const obj = {r: [{_id: 'a'}, {_id: 'b'}], o: {}};
+            jsonpatch.applyPatch(obj, [
+                {op: 'copy', from: '/r/_id:a', path: '/o/copied'},
+                {op: 'move', from: '/r/_id:b', path: '/o/moved'}
+            ]);
+            expect(obj).toEqual({r: [{_id: 'a'}], o: {copied: {_id: 'a'}, moved: {_id: 'b'}}});
+            expect(obj.o.copied).not.toBe(obj.r[0]);
+        });
+    });
+
+    describe('prototype chain', function () {
+        const expectBanned = (document, operation) => {
+            let error;
+            try {
+                jsonpatch.applyPatch(document, [operation]);
+            } catch (e) {
+                error = e;
+            }
+            expect(error instanceof TypeError).toBe(true);
+            expect(error && error.message).toContain('banned for security reasons');
+        };
+
+        it('does not overwrite Object.keys through /constructor/keys', function () {
+            const original = Object.keys;
+            try {
+                expectBanned({}, {op: 'replace', path: '/constructor/keys', value: 'pwned'});
+                expect(Object.keys).toBe(original);
+            } finally {
+                Object.keys = original;
+            }
+        });
+
+        it('does not overwrite Array.isArray through an array constructor', function () {
+            const original = Array.isArray;
+            try {
+                expectBanned({r: []}, {op: 'add', path: '/r/constructor/isArray', value: 'pwned'});
+                expect(Array.isArray).toBe(original);
+            } finally {
+                Array.isArray = original;
+            }
+        });
+
+        it('does not write into inherited methods', function () {
+            try {
+                expectBanned({a: {}}, {op: 'add', path: '/a/toString/x', value: 'pwned'});
+                expect(Object.prototype.toString.x).toBeUndefined();
+            } finally {
+                delete Object.prototype.toString.x;
+            }
+        });
+
+        it('does not read through inherited functions in `from`', function () {
+            expectBanned({a: {}}, {op: 'copy', from: '/a/constructor/name', path: '/b'});
+        });
+
+        it('bans __proto__ and constructor/prototype after an id segment and in `from`', function () {
+            expectBanned({r: [{_id: 'a'}]}, {op: 'add', path: '/r/_id:a/__proto__/x', value: 1});
+            expectBanned({r: [{_id: 'a'}]}, {op: 'add', path: '/r/_id:a/constructor/prototype/x', value: 1});
+            expectBanned({a: {}}, {op: 'copy', from: '/a/__proto__', path: '/b'});
+            expect(({}).x).toBeUndefined();
+        });
+
+        it('an own property called "constructor" is still patchable', function () {
+            const obj = {constructor: {keys: 1}};
+            jsonpatch.applyPatch(obj, [{op: 'replace', path: '/constructor/keys', value: 2}]);
+            expect(obj.constructor.keys).toEqual(2);
+        });
+    });
+
+    describe('malformed operations throw JsonPatchError even without validation', function () {
+        it('unknown op', function () {
+            expect(errorName(() => jsonpatch.applyPatch({a: 1}, [{op: 'foo', path: '/a'}]))).toEqual('OPERATION_OP_INVALID');
+        });
+
+        ['constructor', 'toString', 'hasOwnProperty', '__proto__'].forEach(function (op) {
+            it('op named like an inherited property: ' + op, function () {
+                const obj = {a: 1};
+                expect(errorName(() => jsonpatch.applyPatch(obj, [{op, path: '/a'}]))).toEqual('OPERATION_OP_INVALID');
+                expect(errorName(() => jsonpatch.applyPatch(obj, [{op, path: '/a'}], true))).toEqual('OPERATION_OP_INVALID');
+                const error = jsonpatch.validate([{op, path: '/a'}]);
+                expect(error && error.name).toEqual('OPERATION_OP_INVALID');
+                expect(obj).toEqual({a: 1});
+            });
+        });
+
+        it('missing path', function () {
+            const obj = {a: [1]};
+            expect(errorName(() => jsonpatch.applyPatch(obj, [{op: 'remove'}]))).toEqual('OPERATION_PATH_INVALID');
+            expect(errorName(() => jsonpatch.applyPatch(obj, [{op: 'remove', path: 5}]))).toEqual('OPERATION_PATH_INVALID');
+            expect(obj).toEqual({a: [1]});
+        });
+
+        it('path through a property that does not exist', function () {
+            const obj = {a: 1, n: null};
+            expect(errorName(() => jsonpatch.applyPatch(obj, [{op: 'add', path: '/x/y/z', value: 1}]))).toEqual('OPERATION_PATH_UNRESOLVABLE');
+            expect(errorName(() => jsonpatch.applyPatch(obj, [{op: 'replace', path: '/n/y', value: 1}]))).toEqual('OPERATION_PATH_UNRESOLVABLE');
+            expect(obj).toEqual({a: 1, n: null});
+        });
+    });
+
+    describe('test operation', function () {
+        it('compares values that have a key called "hasOwnProperty"', function () {
+            const obj = {a: {hasOwnProperty: 1}};
+            jsonpatch.applyPatch(obj, [{op: 'test', path: '/a', value: {hasOwnProperty: 1}}], true);
+            expect(errorName(() => jsonpatch.applyPatch(obj, [{op: 'test', path: '/a', value: {hasOwnProperty: 2}}]))).toEqual('TEST_OPERATION_FAILED');
+            expect(errorName(() => jsonpatch.applyPatch(obj, [{op: 'test', path: '/a', value: {other: 1}}]))).toEqual('TEST_OPERATION_FAILED');
+        });
+
+        it('by id passes and fails as expected', function () {
+            const obj = {r: [{_id: 'a', n: 1}]};
+            jsonpatch.applyPatch(obj, [{op: 'test', path: '/r/_id:a/n', value: 1}]);
+            expect(errorName(() => jsonpatch.applyPatch(obj, [{op: 'test', path: '/r/_id:a/n', value: 2}]))).toEqual('TEST_OPERATION_FAILED');
+            expect(errorName(() => jsonpatch.applyPatch(obj, [{op: 'test', path: '/r/_id:zz', value: 2}]))).toEqual('OPERATION_PATH_UNRESOLVABLE');
+        });
+    });
+
+    describe('documented fork semantics', function () {
+        it('add of a primitive that is already in the array is ignored (arrays of primitives are sets)', function () {
+            const obj = {r: [7, 5]};
+            jsonpatch.applyPatch(obj, [{op: 'add', path: '/r/-', value: 5}, {op: 'add', path: '/r/0', value: 5}]);
+            expect(obj.r).toEqual([7, 5]);
+        });
+
+        it('add of an object whose _id is already in the array is ignored, even with other content', function () {
+            const obj = {r: [{_id: 1, n: 'old'}]};
+            jsonpatch.applyPatch(obj, [{op: 'add', path: '/r/-', value: {_id: 1, n: 'new'}}]);
+            expect(obj.r).toEqual([{_id: 1, n: 'old'}]);
+        });
+
+        it('add is idempotent by a custom id field only when idFieldNames is given', function () {
+            const patch = () => [{op: 'add', path: '/r/-', value: {id: 1, n: 'new'}}];
+            const withCustom = {r: [{id: 1, n: 'old'}]};
+            jsonpatch.applyPatch(withCustom, patch(), false, true, true, ['id']);
+            expect(withCustom.r).toEqual([{id: 1, n: 'old'}]);
+            const withDefault = {r: [{id: 1, n: 'old'}]};
+            jsonpatch.applyPatch(withDefault, patch());
+            expect(withDefault.r).toEqual([{id: 1, n: 'old'}, {id: 1, n: 'new'}]);
+        });
+
+        it('a path can address an element by any field, whatever idFieldNames is', function () {
+            const obj = {r: [{_id: 1, role: 'user'}, {_id: 2, role: 'admin'}]};
+            jsonpatch.applyPatch(obj, [{op: 'remove', path: '/r/role:admin'}]);
+            expect(obj.r).toEqual([{_id: 1, role: 'user'}]);
+        });
+
+        it('mutateDocument = false leaves the original untouched when an operation fails', function () {
+            const obj = {r: [{_id: 'a', n: 1}]};
+            expect(errorName(() => jsonpatch.applyPatch(obj, [
+                {op: 'replace', path: '/r/_id:a/n', value: 2},
+                {op: 'replace', path: '/r/_id:zz/n', value: 3}
+            ], false, false))).toEqual('OPERATION_PATH_UNRESOLVABLE');
+            expect(obj).toEqual({r: [{_id: 'a', n: 1}]});
+        });
+    });
+
+    describe('deepClone', function () {
+        it('keeps BigInt values', function () {
+            const source = {n: BigInt(1), l: [BigInt(2), undefined], o: {u: undefined, d: new Date(0)}};
+            const clone = jsonpatch.deepClone(source);
+            expect(clone.n).toBe(BigInt(1));
+            expect(clone.l[0]).toBe(BigInt(2));
+            expect(clone.l[1]).toBe(null);
+            expect('u' in clone.o).toBe(false);
+            expect(clone.o.d).toEqual('1970-01-01T00:00:00.000Z');
+            expect(clone).not.toBe(source);
+        });
+    });
+});
