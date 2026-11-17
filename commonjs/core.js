@@ -106,9 +106,7 @@ var arrOps = {
  * @return The retrieved value
  */
 function getValueByPointer(document, pointer, isFrom) {
-    if (isFrom === void 0) {
-        isFrom = false;
-    }
+    if (isFrom === void 0) { isFrom = false; }
     if (pointer == '') {
         return document;
     }

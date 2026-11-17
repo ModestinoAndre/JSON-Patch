@@ -1,4 +1,4 @@
-/*! fast-json-patch, version: 3.1.4 */
+/*! fast-json-patch, version: 3.1.5 */
 var jsonpatch =
 /******/ (function(modules) { // webpackBootstrap
 /******/ 	// The module cache
@@ -754,6 +754,11 @@ function applyOperation(document, operation, validateOperation, mutateDocument, 
                         // ~~ wraps around above 2^31 (e.g. ~~'4294967295' === -1), so it is only used for short keys
                         key = key.length < 10 ? ~~key : Number(key);
                         if (key > MAX_ARRAY_INDEX) {
+                            notFound = true;
+                        }
+                        else if (key >= obj.length && t >= len && operation.op === 'replace') {
+                            // there is nothing to replace; `arr[key] = value` would grow the array up to that index
+                            // (e.g. `replace /arr/4000000000` creates an array with 4 billion empty slots)
                             notFound = true;
                         }
                     }
