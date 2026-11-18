@@ -2429,6 +2429,20 @@ describe('audit regressions - applying patches', function () {
             expect(obj.r[1].n).toEqual(9);
         });
 
+        it('matches by value a list element that exposes equals() (ObjectId like)', function () {
+            class Id {
+                constructor(v) { this.v = v; }
+                equals(other) { return (other instanceof Id ? other.v : other) === this.v; }
+                toString() { return this.v; }
+            }
+            const obj = {r: [new Id('aa'), new Id('bb'), {equals: 1, v: 'cc'}]};
+            jsonpatch.applyPatch(obj, [{op: 'remove', path: '/r/:aa'}]);
+            expect(obj.r.map(el => el.v)).toEqual(['bb', 'cc']);
+            jsonpatch.applyPatch(obj, [{op: 'replace', path: '/r/:bb', value: 'dd'}]);
+            expect(obj.r[0]).toEqual('dd');
+            expect(() => jsonpatch.applyPatch(obj, [{op: 'replace', path: '/r/:cc', value: 'x'}])).toThrow();
+        });
+
         it('ignores an id whose "equals" property is not a function', function () {
             const obj = {r: [{_id: {equals: 1}}, {_id: 'x'}]};
             jsonpatch.applyPatch(obj, [{op: 'remove', path: '/r/_id:x'}]);

@@ -124,7 +124,11 @@ export function findIndexByIdKey(arr, keyName, keyValue) {
     if (keyName == null || keyName.length == 0) {
         return arr.findIndex(function (el) {
             var type = typeof el;
-            return (type === 'string' || type === 'number' || type === 'boolean' || type === 'bigint') && String(el) === keyValue;
+            if (type === 'string' || type === 'number' || type === 'boolean' || type === 'bigint') {
+                return String(el) === keyValue;
+            }
+            // a list of ObjectIds is addressed by the hex string, as compare() emits it from the serialized document
+            return type === 'object' && el != null && typeof el.equals === 'function' && isSameId(el, keyValue);
         });
     }
     return arr.findIndex(function (el) { return el != null && isSameId(el[keyName], keyValue); });
